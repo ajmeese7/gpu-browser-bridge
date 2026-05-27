@@ -3,9 +3,13 @@
 ## Prerequisites
 
 - Run scripts elevated (Administrator).
-- [NSSM](https://nssm.cc/download) on PATH.
+- [NSSM](https://community.chocolatey.org/packages/NSSM) on PATH. Easiest:
+  ```powershell
+  choco install nssm -y
+  ```
+  (NSSM gives us auto-restart on Chrome/bridge crash, environment-variable passthrough, and log rotation. Native `sc.exe` would work but loses log rotation.)
+- [Google Chrome](https://www.google.com/chrome/) installed at one of the standard `Program Files` locations.
 - Go 1.26+ if building from source (otherwise pass `-SkipBuild` and drop a prebuilt `bridge.exe` in the repo root).
-- Google Chrome installed at one of the standard `Program Files` locations.
 
 ## Install
 

@@ -34,8 +34,10 @@ This bridge exposes a Windows workstation's real Chrome (with a GPU) to remote c
 ### GPU host (Windows)
 
 ```powershell
-# 1. Install Chrome and NSSM (https://nssm.cc/download)
-# 2. Clone this repo, then:
+# 1. Install Google Chrome:    https://www.google.com/chrome/
+# 2. Install NSSM (via Chocolatey):
+choco install nssm -y          # https://community.chocolatey.org/packages/NSSM
+# 3. Clone this repo, then:
 .\windows\install.ps1
 # Prints the bearer token and the caller-side setup snippet.
 ```

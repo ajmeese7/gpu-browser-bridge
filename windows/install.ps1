@@ -2,10 +2,12 @@
 #
 # Prerequisites:
 #   - Run elevated (Administrator).
-#   - NSSM on PATH. Download from https://nssm.cc/download
+#   - NSSM on PATH. Easiest: `choco install nssm -y`
+#     (https://community.chocolatey.org/packages/NSSM)
 #   - Chrome installed at one of:
 #       C:\Program Files\Google\Chrome\Application\chrome.exe
 #       C:\Program Files (x86)\Google\Chrome\Application\chrome.exe
+#     Download: https://www.google.com/chrome/
 #
 # Usage:
 #   .\install.ps1                     # builds, generates token, registers service
@@ -47,11 +49,11 @@ function Find-Chrome {
   foreach ($p in $candidates) {
     if (Test-Path $p) { return $p }
   }
-  throw "Chrome not found. Install from https://www.google.com/chrome/ and re-run."
+  throw "Google Chrome not found. Download from https://www.google.com/chrome/ and re-run."
 }
 
 Require-Admin
-Require-Command "nssm.exe" "Install NSSM from https://nssm.cc/download and add to PATH."
+Require-Command "nssm.exe" "Install NSSM with: choco install nssm -y  (see https://community.chocolatey.org/packages/NSSM)"
 $chrome = Find-Chrome
 Write-Host "Chrome found at $chrome"
 
