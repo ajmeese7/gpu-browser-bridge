@@ -14,8 +14,8 @@
 #   .\install.ps1 -Token <hex>        # use a specific token instead of generating
 #   .\install.ps1 -SkipBuild          # use existing bridge.exe in repo root
 #
-# After install: bridge listens on 127.0.0.1:51234. Set up a reverse SSH
-# tunnel from the headless host to reach it.
+# After install: bridge listens on 127.0.0.1:51234. Set up an SSH
+# local-forward tunnel from the headless host to reach it.
 
 [CmdletBinding()]
 param(
@@ -78,7 +78,7 @@ if (-not (Test-Path $binarySrc)) {
   throw "bridge.exe not found at $binarySrc. Build first or omit -SkipBuild."
 }
 
-# Stop any existing service BEFORE touching the install dir — the running
+# Stop any existing service BEFORE touching the install dir - the running
 # bridge.exe holds an exclusive lock on the file and Copy-Item will fail.
 # Also kill any orphan bridge.exe processes started outside the service
 # (e.g. from a foreground dev run).
@@ -116,7 +116,7 @@ if ($LASTEXITCODE -ne 0) { throw "icacls failed to lock down $tokenPath" }
 Write-Host "Registering NSSM service $ServiceName ..."
 # NSSM is the SCM wrapper, so bridge.exe must run in console mode (no
 # 'service' arg). Passing 'service' would invoke our svc.Run path which
-# tries to dialog with the SCM directly — and since NSSM owns that
+# tries to dialog with the SCM directly - and since NSSM owns that
 # channel, the child crashes and NSSM reports SERVICE_PAUSED.
 & nssm.exe install $ServiceName $binaryDest
 & nssm.exe set $ServiceName AppDirectory      $InstallDir
@@ -144,8 +144,8 @@ Write-Host "Token saved to $tokenPath"
 Write-Host ""
 Write-Host "On the headless host (caller side):"
 Write-Host ""
-Write-Host "  # Open reverse tunnel so the bridge appears as localhost:51234:"
-Write-Host "  ssh -N -R 51234:localhost:51234 <user>@<this-machine>"
+Write-Host "  # Open local-forward tunnel so the bridge appears as localhost:51234:"
+Write-Host "  ssh -N -L 51234:localhost:51234 <user>@<this-machine>"
 Write-Host ""
 Write-Host "  # Configure the CLI:"
 Write-Host "  mkdir -p ~/.config/gpu-browser"

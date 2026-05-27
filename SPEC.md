@@ -21,7 +21,7 @@ We want headless callers to verify GPU-dependent UI on a workstation with a real
 
 ```
 +--------------------+          SSH reverse tunnel           +---------------------+
-|  Headless caller   |  ── ssh -R 51234:localhost:51234 ──→  | GPU host (Windows)  |
+|  Headless caller   |  ── ssh -L 51234:localhost:51234 ──→  | GPU host (Windows)  |
 |  (Linux / cloud)   |                                       |                     |
 |                    |     POST http://localhost:51234/…     |  bridge.exe         |
 |  gpu-browser CLI   | ────────────────────────────────────→ |  (Windows service)  |
@@ -50,7 +50,7 @@ We want headless callers to verify GPU-dependent UI on a workstation with a real
 Just enough to validate the workflow.
 
 - Windows Task Scheduler entry: launch Chrome at user logon with `--remote-debugging-port=9222 --user-data-dir=%LOCALAPPDATA%\bridge-chrome --remote-allow-origins=*`, bound to `127.0.0.1` only.
-- Manual SSH reverse tunnel from the headless host: `ssh -R 9222:localhost:9222 user@gpu-host` (kept open in a tmux window or via `autossh`).
+- Manual SSH reverse tunnel from the headless host: `ssh -L 9222:localhost:9222 user@gpu-host` (kept open in a tmux window or via `autossh`).
 - Caller writes a Playwright spec using `chromium.connectOverCDP("http://localhost:9222")` and runs it on the headless host.
 
 **Exit criterion:** caller takes one screenshot of any WebGPU-using URL through GPU-backed Chrome and gets a PNG back. Confirm the page reports the WebGPU code path (e.g. Babylon's renderer badge) rather than WebGL2.

@@ -2,21 +2,21 @@
 
 The bridge binds `127.0.0.1:51234` on the GPU host. To call it from a headless host (the caller), you need to make that port reachable on the caller's loopback as well.
 
-This doc covers two ways: SSH reverse tunnel (recommended, works on any network) and Tailscale (zero-tunnel-maintenance, requires Tailscale on both ends).
+This doc covers two ways: SSH local-forward tunnel (recommended, works on any network) and Tailscale (zero-tunnel-maintenance, requires Tailscale on both ends).
 
-## Option A — SSH reverse tunnel (recommended)
+## Option A -- SSH local-forward tunnel (recommended)
 
-The caller opens a tunnel TO the GPU host, then forwards the bridge port BACK to itself. Everything stays on loopback on both ends.
+The caller opens an SSH connection TO the GPU host and creates a local forward (`-L`), making the bridge's port appear on the caller's own loopback. Everything stays on loopback on both ends.
 
 ### One-shot (foreground)
 
 On the caller:
 
 ```bash
-ssh -N -R 51234:localhost:51234 <user>@<gpu-host>
+ssh -N -L 51234:localhost:51234 <user>@<gpu-host>
 ```
 
-`-N` = no remote shell, `-R port:host:port` = forward GPU host's localhost:51234 onto the caller's localhost:51234. Leave it running; in another terminal:
+`-N` = no remote shell, `-L local:host:remote` = listen on the caller's localhost:51234 and forward to the GPU host's localhost:51234 through the SSH connection. Leave it running; in another terminal:
 
 ```bash
 curl http://localhost:51234/healthz
@@ -37,7 +37,7 @@ ExecStart=/usr/bin/autossh -M 0 -N \
   -o "ServerAliveInterval 30" \
   -o "ServerAliveCountMax 3" \
   -o "ExitOnForwardFailure yes" \
-  -R 51234:localhost:51234 \
+  -L 51234:localhost:51234 \
   <user>@<gpu-host>
 Restart=always
 RestartSec=10

@@ -4,6 +4,8 @@
 *.dll
 *.so
 *.dylib
+gpu-browser
+bridge
 
 # Test binary, built with `go test -c`
 *.test
