@@ -17,7 +17,7 @@ This bridge exposes a Windows workstation's real Chrome (with a GPU) to remote c
 ## Architecture
 
 ```
-+--------------------+            SSH tunnel                  +---------------------+
++--------------------+            SSH tunnel                 +---------------------+
 |  Headless caller   |  ── ssh -L 51234:localhost:51234 ──→  | GPU host (Windows)  |
 |                    |                                       |                     |
 |  gpu-browser CLI   |     POST http://localhost:51234/…     |  bridge.exe (NSSM)  |
