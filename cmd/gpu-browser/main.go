@@ -8,7 +8,7 @@
 //
 // Configuration is via environment variables:
 //
-//	BRIDGE_URL    e.g. http://localhost:8765
+//	BRIDGE_URL    e.g. http://localhost:51234
 //	BRIDGE_TOKEN  bearer token printed by install.ps1
 //
 // or ~/.config/gpu-browser/config (KEY=value, one per line).
@@ -72,7 +72,7 @@ func loadClientConfig() (*clientConfig, error) {
 	}
 
 	if c.URL == "" {
-		c.URL = "http://localhost:8765"
+		c.URL = "http://localhost:51234"
 	}
 	if c.Token == "" {
 		return nil, fmt.Errorf("no BRIDGE_TOKEN set (env or ~/.config/gpu-browser/config)")
@@ -126,7 +126,7 @@ eval flags:
   --settle MS                     extra wait after load (ms)
 
 env:
-  BRIDGE_URL                      default http://localhost:8765
+  BRIDGE_URL                      default http://localhost:51234
   BRIDGE_TOKEN                    required`)
 }
 

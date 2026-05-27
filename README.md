@@ -17,16 +17,16 @@ This bridge exposes a Windows workstation's real Chrome (with a GPU) to remote c
 ## Architecture
 
 ```
-+--------------------+        SSH reverse tunnel        +---------------------+
-|  Headless caller   |  ── ssh -R 8765:localhost:8765 ─→| GPU host (Windows)  |
-|                    |                                  |                     |
-|  gpu-browser CLI   |   POST http://localhost:8765/…   |  bridge.exe (NSSM)  |
-|                    | ───────────────────────────────→ |        │            |
-+--------------------+ ←─────────── JSON ──────────────  |        ▼            |
-                                                        |  Chrome + chromedp  |
-                                                        |  127.0.0.1:8765     |
-                                                        |  WebGPU enabled     |
-                                                        +---------------------+
++--------------------+          SSH reverse tunnel           +---------------------+
+|  Headless caller   |  ── ssh -R 51234:localhost:51234 ──→  | GPU host (Windows)  |
+|                    |                                       |                     |
+|  gpu-browser CLI   |     POST http://localhost:51234/…     |  bridge.exe (NSSM)  |
+|                    | ────────────────────────────────────→ |        │            |
++--------------------+ ←──────────── JSON ─────────────────  |        ▼            |
+                                                             |  Chrome + chromedp  |
+                                                             |  127.0.0.1:51234    |
+                                                             |  WebGPU enabled     |
+                                                             +---------------------+
 ```
 
 ## Quick start
@@ -48,12 +48,12 @@ choco install nssm -y          # https://community.chocolatey.org/packages/NSSM
 
 ```bash
 # 1. Open the reverse tunnel (autossh in production, see docs/networking.md)
-ssh -N -R 8765:localhost:8765 <user>@<gpu-host>
+ssh -N -R 51234:localhost:51234 <user>@<gpu-host>
 
 # 2. Configure the CLI
 mkdir -p ~/.config/gpu-browser
 cat > ~/.config/gpu-browser/config <<EOF
-BRIDGE_URL=http://localhost:8765
+BRIDGE_URL=http://localhost:51234
 BRIDGE_TOKEN=<token from install.ps1>
 EOF
 

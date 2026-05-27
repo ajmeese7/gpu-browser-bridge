@@ -32,7 +32,7 @@ At the end it prints the headless-host setup snippet (reverse tunnel + CLI confi
 ## Verify
 
 ```powershell
-curl http://127.0.0.1:8765/healthz
+curl http://127.0.0.1:51234/healthz
 # {"ok":true,"chrome_alive":true,"uptime_s":7}
 ```
 

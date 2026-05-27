@@ -1,6 +1,6 @@
 # Networking
 
-The bridge binds `127.0.0.1:8765` on the GPU host. To call it from a headless host (the caller), you need to make that port reachable on the caller's loopback as well.
+The bridge binds `127.0.0.1:51234` on the GPU host. To call it from a headless host (the caller), you need to make that port reachable on the caller's loopback as well.
 
 This doc covers two ways: SSH reverse tunnel (recommended, works on any network) and Tailscale (zero-tunnel-maintenance, requires Tailscale on both ends).
 
@@ -13,13 +13,13 @@ The caller opens a tunnel TO the GPU host, then forwards the bridge port BACK to
 On the caller:
 
 ```bash
-ssh -N -R 8765:localhost:8765 <user>@<gpu-host>
+ssh -N -R 51234:localhost:51234 <user>@<gpu-host>
 ```
 
-`-N` = no remote shell, `-R port:host:port` = forward GPU host's localhost:8765 onto the caller's localhost:8765. Leave it running; in another terminal:
+`-N` = no remote shell, `-R port:host:port` = forward GPU host's localhost:51234 onto the caller's localhost:51234. Leave it running; in another terminal:
 
 ```bash
-curl http://localhost:8765/healthz
+curl http://localhost:51234/healthz
 ```
 
 ### Persistent (autossh + systemd)
@@ -37,7 +37,7 @@ ExecStart=/usr/bin/autossh -M 0 -N \
   -o "ServerAliveInterval 30" \
   -o "ServerAliveCountMax 3" \
   -o "ExitOnForwardFailure yes" \
-  -R 8765:localhost:8765 \
+  -R 51234:localhost:51234 \
   <user>@<gpu-host>
 Restart=always
 RestartSec=10
@@ -56,7 +56,7 @@ Verify:
 
 ```bash
 systemctl --user status gpu-bridge-tunnel
-curl http://localhost:8765/healthz
+curl http://localhost:51234/healthz
 ```
 
 ### Notes
@@ -76,7 +76,7 @@ Both machines join the same tailnet. Bridge binds the tailscale interface; calle
 
 ```powershell
 nssm set gpu-browser-bridge AppEnvironmentExtra `
-  "BRIDGE_BIND_ADDR=<tailscale-ip>:8765" `
+  "BRIDGE_BIND_ADDR=<tailscale-ip>:51234" `
   "BRIDGE_CHROME_PATH=..." `
   "BRIDGE_USER_DATA_DIR=..." `
   "BRIDGE_TOKEN_PATH=..." `
@@ -87,14 +87,14 @@ Restart-Service gpu-browser-bridge
 Important: the bridge's `config.validate()` currently rejects non-loopback `BindAddr` to prevent accidental exposure. Tailscale support is a planned change — see issue tracker, or override the check by binding `127.0.0.1` and using Tailscale's `tailscale serve` to expose loopback to the tailnet:
 
 ```powershell
-tailscale serve --bg --tcp 8765 tcp://127.0.0.1:8765
+tailscale serve --bg --tcp 51234 tcp://127.0.0.1:51234
 ```
 
 ### Caller
 
 ```bash
 # Find the GPU host's tailscale name from `tailscale status`
-export BRIDGE_URL=http://<gpu-host>.<tailnet>.ts.net:8765
+export BRIDGE_URL=http://<gpu-host>.<tailnet>.ts.net:51234
 gpu-browser healthz
 ```
 
@@ -108,7 +108,7 @@ Restrict who can hit the bridge port:
   "acls": [
     { "action": "accept",
       "src":    ["tag:bridge-caller"],
-      "dst":    ["tag:bridge-host:8765"] }
+      "dst":    ["tag:bridge-host:51234"] }
   ]
 }
 ```

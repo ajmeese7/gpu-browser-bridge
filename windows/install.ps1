@@ -14,7 +14,7 @@
 #   .\install.ps1 -Token <hex>        # use a specific token instead of generating
 #   .\install.ps1 -SkipBuild          # use existing bridge.exe in repo root
 #
-# After install: bridge listens on 127.0.0.1:8765. Set up a reverse SSH
+# After install: bridge listens on 127.0.0.1:51234. Set up a reverse SSH
 # tunnel from the headless host to reach it.
 
 [CmdletBinding()]
@@ -131,18 +131,18 @@ Write-Host "Starting service ..."
 Write-Host ""
 Write-Host "Install complete." -ForegroundColor Green
 Write-Host ""
-Write-Host "Bridge listens on http://127.0.0.1:8765 (loopback only)."
+Write-Host "Bridge listens on http://127.0.0.1:51234 (loopback only)."
 Write-Host "Token saved to $tokenPath"
 Write-Host ""
 Write-Host "On the headless host (caller side):"
 Write-Host ""
-Write-Host "  # Open reverse tunnel so the bridge appears as localhost:8765:"
-Write-Host "  ssh -N -R 8765:localhost:8765 <user>@<this-machine>"
+Write-Host "  # Open reverse tunnel so the bridge appears as localhost:51234:"
+Write-Host "  ssh -N -R 51234:localhost:51234 <user>@<this-machine>"
 Write-Host ""
 Write-Host "  # Configure the CLI:"
 Write-Host "  mkdir -p ~/.config/gpu-browser"
 Write-Host "  cat > ~/.config/gpu-browser/config <<EOF"
-Write-Host "  BRIDGE_URL=http://localhost:8765"
+Write-Host "  BRIDGE_URL=http://localhost:51234"
 Write-Host "  BRIDGE_TOKEN=$Token"
 Write-Host "  EOF"
 Write-Host ""

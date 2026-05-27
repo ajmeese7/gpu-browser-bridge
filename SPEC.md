@@ -20,20 +20,20 @@ We want headless callers to verify GPU-dependent UI on a workstation with a real
 ## Architecture
 
 ```
-+--------------------+        SSH reverse tunnel        +---------------------+
-|  Headless caller   |  ── ssh -R 8765:localhost:8765 ─→| GPU host (Windows)  |
-|  (Linux / cloud)   |                                  |                     |
-|                    |   POST http://localhost:8765/…   |  bridge.exe         |
-|  gpu-browser CLI   | ───────────────────────────────→ |  (Windows service)  |
-|  or MCP client     | ←─────────── JSON ──────────────  |        │            |
-+--------------------+                                  |        ▼            |
-                                                        |  Playwright / CDP   |
-                                                        |        │            |
-                                                        |        ▼            |
-                                                        |  Chrome (persistent)|
-                                                        |  127.0.0.1:9222 CDP |
-                                                        |  WebGPU enabled     |
-                                                        +---------------------+
++--------------------+          SSH reverse tunnel           +---------------------+
+|  Headless caller   |  ── ssh -R 51234:localhost:51234 ──→  | GPU host (Windows)  |
+|  (Linux / cloud)   |                                       |                     |
+|                    |     POST http://localhost:51234/…     |  bridge.exe         |
+|  gpu-browser CLI   | ────────────────────────────────────→ |  (Windows service)  |
+|  or MCP client     | ←──────────── JSON ─────────────────  |        │            |
++--------------------+                                       |        ▼            |
+                                                             |  Playwright / CDP   |
+                                                             |        │            |
+                                                             |        ▼            |
+                                                             |  Chrome (persistent)|
+                                                             |  127.0.0.1:9222 CDP |
+                                                             |  WebGPU enabled     |
+                                                             +---------------------+
 ```
 
 **Why a wrapper, not raw CDP?** CDP has zero auth. Anything that can reach :9222 can read every cookie/password in that Chrome profile and execute arbitrary JS in any tab. The wrapper adds:
@@ -133,7 +133,7 @@ headless host:
     "gpu-browser": {
       "command": "gpu-browser-mcp",
       "env": {
-        "BRIDGE_URL": "http://localhost:8765",
+        "BRIDGE_URL": "http://localhost:51234",
         "BRIDGE_TOKEN": "..."
       }
     }

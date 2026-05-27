@@ -36,7 +36,7 @@ type Config struct {
 // Env vars override defaults. Token is loaded from disk only.
 func Load() (*Config, error) {
 	c := &Config{
-		BindAddr:    envOr("BRIDGE_BIND_ADDR", "127.0.0.1:8765"),
+		BindAddr:    envOr("BRIDGE_BIND_ADDR", "127.0.0.1:51234"),
 		ChromePath:  envOr("BRIDGE_CHROME_PATH", defaultChromePath()),
 		UserDataDir: envOr("BRIDGE_USER_DATA_DIR", defaultUserDataDir()),
 		LogPath:     envOr("BRIDGE_LOG_PATH", defaultLogPath()),

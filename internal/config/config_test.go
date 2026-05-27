@@ -29,7 +29,7 @@ func TestGenerateToken_RoundTrip(t *testing.T) {
 
 func TestValidate_RejectsNonLoopback(t *testing.T) {
 	c := &Config{
-		BindAddr:   "0.0.0.0:8765",
+		BindAddr:   "0.0.0.0:51234",
 		Token:      "x" + string(make([]byte, 63)),
 		ChromePath: `C:\fake\chrome.exe`,
 	}
@@ -40,7 +40,7 @@ func TestValidate_RejectsNonLoopback(t *testing.T) {
 
 func TestValidate_RejectsShortToken(t *testing.T) {
 	c := &Config{
-		BindAddr:   "127.0.0.1:8765",
+		BindAddr:   "127.0.0.1:51234",
 		Token:      "tooshort",
 		ChromePath: `C:\fake\chrome.exe`,
 	}
