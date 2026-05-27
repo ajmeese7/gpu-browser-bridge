@@ -78,6 +78,20 @@ if (-not (Test-Path $binarySrc)) {
   throw "bridge.exe not found at $binarySrc. Build first or omit -SkipBuild."
 }
 
+# Stop any existing service BEFORE touching the install dir — the running
+# bridge.exe holds an exclusive lock on the file and Copy-Item will fail.
+# Also kill any orphan bridge.exe processes started outside the service
+# (e.g. from a foreground dev run).
+if (Get-Service $ServiceName -ErrorAction SilentlyContinue) {
+  Write-Host "Stopping existing service ..."
+  & nssm.exe stop   $ServiceName confirm | Out-Null
+  & nssm.exe remove $ServiceName confirm | Out-Null
+}
+Get-Process bridge -ErrorAction SilentlyContinue | ForEach-Object {
+  Write-Host "Killing orphan bridge.exe (PID $($_.Id), $($_.Path)) ..."
+  Stop-Process -Id $_.Id -Force
+}
+
 Write-Host "Installing binary to $InstallDir ..."
 New-Item -ItemType Directory -Force -Path $InstallDir | Out-Null
 Copy-Item -Force $binarySrc (Join-Path $InstallDir "bridge.exe")
@@ -98,12 +112,6 @@ if ($Token -eq "") {
 # permissions, no one else. icacls is less brittle than .NET ACL APIs.
 & icacls.exe $tokenPath /inheritance:r /grant:r "SYSTEM:R" "Administrators:F" | Out-Null
 if ($LASTEXITCODE -ne 0) { throw "icacls failed to lock down $tokenPath" }
-
-if (Get-Service $ServiceName -ErrorAction SilentlyContinue) {
-  Write-Host "Stopping existing service ..."
-  & nssm.exe stop   $ServiceName confirm  | Out-Null
-  & nssm.exe remove $ServiceName confirm  | Out-Null
-}
 
 Write-Host "Registering NSSM service $ServiceName ..."
 # NSSM is the SCM wrapper, so bridge.exe must run in console mode (no
