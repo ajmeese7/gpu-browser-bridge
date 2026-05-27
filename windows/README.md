@@ -1,9 +1,14 @@
 # Windows install notes
 
+## Elevation
+
+`install.ps1`, `uninstall.ps1`, `choco install`, `Restart-Service`, and the token-rotation `bridge.exe gen-token` (when writing to `%ProgramData%`) all require an **elevated PowerShell**. Open PowerShell with right-click → "Run as Administrator". The install/uninstall scripts will refuse to run otherwise.
+
+`go build` and running `bridge.exe` in foreground console mode (with custom paths under your user profile) do **not** need elevation — useful for development.
+
 ## Prerequisites
 
-- Run scripts elevated (Administrator).
-- [NSSM](https://community.chocolatey.org/packages/NSSM) on PATH. Easiest:
+- [NSSM](https://community.chocolatey.org/packages/NSSM) on PATH. Easiest, in an elevated shell:
   ```powershell
   choco install nssm -y
   ```
@@ -12,6 +17,8 @@
 - Go 1.26+ if building from source (otherwise pass `-SkipBuild` and drop a prebuilt `bridge.exe` in the repo root).
 
 ## Install
+
+In an elevated PowerShell:
 
 ```powershell
 cd C:\path\to\gpu-browser-bridge
@@ -33,12 +40,16 @@ If `chrome_alive` is `false`, check `%ProgramData%\gpu-browser-bridge\bridge.log
 
 ## Uninstall
 
+In an elevated PowerShell:
+
 ```powershell
 .\windows\uninstall.ps1            # leaves token + profile in place
 .\windows\uninstall.ps1 -Purge     # removes everything
 ```
 
 ## Token rotation
+
+In an elevated PowerShell:
 
 ```powershell
 & "$env:ProgramFiles\gpu-browser-bridge\bridge.exe" gen-token "$env:ProgramData\gpu-browser-bridge\token"

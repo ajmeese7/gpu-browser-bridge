@@ -33,6 +33,8 @@ This bridge exposes a Windows workstation's real Chrome (with a GPU) to remote c
 
 ### GPU host (Windows)
 
+> **All Windows steps below need an elevated PowerShell** (right-click PowerShell → "Run as Administrator"). Registering a Windows service, writing to `%ProgramFiles%`, and `choco install` all require admin. The script will refuse to run otherwise.
+
 ```powershell
 # 1. Install Google Chrome:    https://www.google.com/chrome/
 # 2. Install NSSM (via Chocolatey):
