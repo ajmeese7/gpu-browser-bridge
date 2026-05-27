@@ -94,16 +94,10 @@ if ($Token -eq "") {
 } else {
   Set-Content -Path $tokenPath -Value $Token -NoNewline
 }
-# Lock down token: SYSTEM + Administrators full, no one else.
-$acl = Get-Acl $tokenPath
-$acl.SetAccessRuleProtection($true, $false)
-$acl.Access | ForEach-Object { [void]$acl.RemoveAccessRule($_) }
-$rules = @(
-  New-Object System.Security.AccessControl.FileSystemAccessRule("SYSTEM",         "FullControl", "Allow"),
-  New-Object System.Security.AccessControl.FileSystemAccessRule("Administrators", "FullControl", "Allow")
-)
-foreach ($r in $rules) { $acl.AddAccessRule($r) }
-Set-Acl $tokenPath $acl
+# Lock down token: SYSTEM (read) + Administrators (full), no inherited
+# permissions, no one else. icacls is less brittle than .NET ACL APIs.
+& icacls.exe $tokenPath /inheritance:r /grant:r "SYSTEM:R" "Administrators:F" | Out-Null
+if ($LASTEXITCODE -ne 0) { throw "icacls failed to lock down $tokenPath" }
 
 if (Get-Service $ServiceName -ErrorAction SilentlyContinue) {
   Write-Host "Stopping existing service ..."
