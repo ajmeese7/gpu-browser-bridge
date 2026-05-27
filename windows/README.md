@@ -27,7 +27,7 @@ cd C:\path\to\gpu-browser-bridge
 
 The script builds `bridge.exe`, copies it to `%ProgramFiles%\gpu-browser-bridge\`, generates a 64-char hex token at `%ProgramData%\gpu-browser-bridge\token` (locked to SYSTEM + Administrators), registers an NSSM-managed service called `gpu-browser-bridge`, and starts it.
 
-At the end it prints the headless-host setup snippet (reverse tunnel + CLI config). Copy that to the caller machine.
+At the end it prints the headless-host setup snippet (SSH tunnel + CLI config). Copy that to the caller machine.
 
 ## Verify
 

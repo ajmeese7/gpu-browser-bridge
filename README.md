@@ -17,7 +17,7 @@ This bridge exposes a Windows workstation's real Chrome (with a GPU) to remote c
 ## Architecture
 
 ```
-+--------------------+          SSH reverse tunnel           +---------------------+
++--------------------+            SSH tunnel                  +---------------------+
 |  Headless caller   |  ── ssh -L 51234:localhost:51234 ──→  | GPU host (Windows)  |
 |                    |                                       |                     |
 |  gpu-browser CLI   |     POST http://localhost:51234/…     |  bridge.exe (NSSM)  |
@@ -47,8 +47,8 @@ choco install nssm -y          # https://community.chocolatey.org/packages/NSSM
 ### Caller (Linux / macOS / WSL)
 
 ```bash
-# 1. Open the reverse tunnel (autossh in production, see docs/networking.md)
-ssh -N -R 51234:localhost:51234 <user>@<gpu-host>
+# 1. Open the SSH tunnel (autossh in production, see docs/networking.md)
+ssh -N -L 51234:localhost:51234 <user>@<gpu-host>
 
 # 2. Configure the CLI
 mkdir -p ~/.config/gpu-browser
@@ -76,14 +76,29 @@ All POST endpoints require `Authorization: Bearer <token>`. `GET /healthz` is un
 
 `script` runs in page context after navigation + optional wait; the final expression's value is returned. Promises are awaited.
 
-## Docs
+## Install
 
-- [SPEC.md](./SPEC.md) — full design, milestones (v0–v2), open questions
-- [docs/networking.md](./docs/networking.md) — reverse SSH tunnel and Tailscale recipes
-- [docs/security.md](./docs/security.md) — threat model, what's protected and not
-- [windows/README.md](./windows/README.md) — install / uninstall / token rotation
+### Pre-built binaries
 
-## Build from source
+Download from the [latest release](../../releases/latest):
+
+| Binary | Platform | Description |
+|--------|----------|-------------|
+| `bridge.exe` | Windows amd64 | GPU host service |
+| `gpu-browser-linux-amd64` | Linux amd64 | Caller CLI |
+| `gpu-browser-linux-arm64` | Linux arm64 | Caller CLI |
+| `gpu-browser-darwin-amd64` | macOS Intel | Caller CLI |
+| `gpu-browser-darwin-arm64` | macOS Apple Silicon | Caller CLI |
+
+On the caller:
+
+```bash
+curl -Lo gpu-browser https://github.com/ajmeese7/gpu-browser-bridge/releases/latest/download/gpu-browser-linux-amd64
+chmod +x gpu-browser
+sudo mv gpu-browser /usr/local/bin/
+```
+
+### Build from source
 
 ```bash
 go build -o bridge.exe ./cmd/bridge        # Windows binary
@@ -91,3 +106,10 @@ go build -o gpu-browser  ./cmd/gpu-browser  # caller CLI (cross-platform)
 ```
 
 Go 1.26+ required (pulled in by chromedp).
+
+## Docs
+
+- [SPEC.md](./SPEC.md) — full design, milestones (v0–v2), design decisions
+- [docs/networking.md](./docs/networking.md) — SSH tunnel and Tailscale recipes
+- [docs/security.md](./docs/security.md) — threat model, what's protected and not
+- [windows/README.md](./windows/README.md) — install / uninstall / token rotation

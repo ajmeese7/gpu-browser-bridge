@@ -119,9 +119,9 @@ Tag the GPU host with `bridge-host` and the caller with `bridge-caller`. Nothing
 
 | Need | Pick |
 |------|------|
-| Caller and GPU host on the same LAN, never need access from elsewhere | SSH reverse tunnel |
+| Caller and GPU host on the same LAN, never need access from elsewhere | SSH local-forward tunnel |
 | Caller and GPU host on different networks (cloud VM, remote office) | Tailscale |
-| Already running an SSH connection between them | SSH reverse tunnel (it's free) |
+| Already running an SSH connection between them | SSH local-forward tunnel (it's free) |
 | Multiple callers need bridge access | Tailscale with ACL |
 
 Start with the SSH tunnel. Move to Tailscale only when the tunnel becomes a hassle to maintain.

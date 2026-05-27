@@ -134,6 +134,7 @@ func (s *Server) ListenAndServe(ctx context.Context) error {
 		Addr:              s.cfg.BindAddr,
 		Handler:           s.Handler(),
 		ReadHeaderTimeout: 5 * time.Second,
+		MaxHeaderBytes:    1 << 20,
 	}
 
 	errCh := make(chan error, 1)

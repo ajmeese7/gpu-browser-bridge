@@ -20,7 +20,7 @@ We want headless callers to verify GPU-dependent UI on a workstation with a real
 ## Architecture
 
 ```
-+--------------------+          SSH reverse tunnel           +---------------------+
++--------------------+            SSH tunnel                  +---------------------+
 |  Headless caller   |  ── ssh -L 51234:localhost:51234 ──→  | GPU host (Windows)  |
 |  (Linux / cloud)   |                                       |                     |
 |                    |     POST http://localhost:51234/…     |  bridge.exe         |
@@ -50,7 +50,7 @@ We want headless callers to verify GPU-dependent UI on a workstation with a real
 Just enough to validate the workflow.
 
 - Windows Task Scheduler entry: launch Chrome at user logon with `--remote-debugging-port=9222 --user-data-dir=%LOCALAPPDATA%\bridge-chrome --remote-allow-origins=*`, bound to `127.0.0.1` only.
-- Manual SSH reverse tunnel from the headless host: `ssh -L 9222:localhost:9222 user@gpu-host` (kept open in a tmux window or via `autossh`).
+- Manual SSH local-forward tunnel from the headless host: `ssh -L 9222:localhost:9222 user@gpu-host` (kept open in a tmux window or via `autossh`).
 - Caller writes a Playwright spec using `chromium.connectOverCDP("http://localhost:9222")` and runs it on the headless host.
 
 **Exit criterion:** caller takes one screenshot of any WebGPU-using URL through GPU-backed Chrome and gets a PNG back. Confirm the page reports the WebGPU code path (e.g. Babylon's renderer badge) rather than WebGL2.
@@ -70,9 +70,9 @@ All require `Authorization: Bearer <token>` header. Token loaded from `%PROGRAMD
 | `GET`  | `/healthz` | — | `{ok: true, chrome_alive: bool, uptime_s: int}` (no auth) |
 | `POST` | `/screenshot` | `{url, viewport?, wait_for?, full_page?}` | `{png_b64, console[], failed_requests[]}` |
 | `POST` | `/eval` | `{url, script, wait_for?}` | `{result, console[], failed_requests[]}` |
-| `POST` | `/trace` | `{url, actions[]}` | `{trace_zip_b64, screenshots[], console[]}` |
-
 `script` for `/eval` runs in page context after `wait_for`. Result must be JSON-serializable. The caller cannot pass arbitrary CDP commands — only the above shapes.
+
+> **Deferred:** `/trace` (multi-step Playwright traces) was originally planned for v1 but deferred to reduce scope. Screenshots + eval cover the primary use cases.
 
 #### Chrome lifecycle
 
@@ -83,10 +83,10 @@ All require `Authorization: Bearer <token>` header. Token loaded from `%PROGRAMD
 #### Why Go
 
 - Single static binary, no runtime install.
-- `chromedp` or `playwright-community/playwright-go` for the driver.
+- `chromedp` for the CDP driver (pure Go, no Node sidecar).
 - Matches the existing `.gitignore` (Go-flavored) — assume that signal.
 
-If `playwright-go` proves flaky on Windows we fall back to `chromedp` (pure Go, CDP-native, no node sidecar).
+> **Resolved:** chose `chromedp` over `playwright-go`. Pure Go, no Node dependency, CDP-native. Simpler build and deployment.
 
 #### Installation
 
@@ -145,7 +145,7 @@ Tools exposed: `screenshot(url, ...)`, `eval(url, script, ...)`, `trace(...)`.
 
 | Threat | Mitigation |
 |--------|------------|
-| Someone on the LAN reaches the bridge port | Bridge binds `127.0.0.1` only; reached only via SSH reverse tunnel (v0/v1) or Tailscale ACL (v2) |
+| Someone on the LAN reaches the bridge port | Bridge binds `127.0.0.1` only; reached only via SSH local-forward tunnel (v0/v1) or Tailscale ACL (v2) |
 | Stolen bearer token | Token rotation script; token in `%PROGRAMDATA%`, ACL'd to admins + service account |
 | Malicious `eval` script reads cookies from user's real browser | Bridge Chrome uses dedicated `--user-data-dir`, separate from user's daily Chrome; logged into only test accounts |
 | `eval` script exfiltrates data to an attacker domain | Out of scope for v1; the threat is "the trusted caller went rogue," which we accept. Could add an outbound domain allowlist later if needed. |
@@ -155,18 +155,18 @@ Tools exposed: `screenshot(url, ...)`, `eval(url, script, ...)`, `trace(...)`.
 
 ## Networking decision (v0 → v2)
 
-- **v0/v1: SSH reverse tunnel from the headless host.** Tunnel command in a systemd unit or cron `@reboot` on the headless host. If the tunnel dies, `autossh` restarts it. Bridge port never leaves Windows localhost.
+- **v0/v1: SSH local-forward tunnel from the headless host.** The caller runs `ssh -L 51234:localhost:51234 <user>@<gpu-host>`, making the bridge appear on the caller's loopback. Tunnel command in a systemd unit or cron `@reboot` on the headless host. If the tunnel dies, `autossh` restarts it. Bridge port never leaves Windows localhost.
 - **v2 (if needed): Tailscale.** Both machines on a personal tailnet, bridge binds to the tailscale interface, ACL restricts to specific nodes. Removes the tunnel maintenance burden; adds Tailscale dependency.
 
 Start at v0. Only graduate to Tailscale when working from outside the LAN becomes a real need.
 
-## Open questions for review
+## Design decisions (resolved)
 
-1. **Driver choice — `chromedp` (pure Go, CDP-native) vs `playwright-go` (mirrors what many existing E2E test suites use).** Lean `chromedp` for fewer moving parts; `playwright-go` if symmetry with existing Playwright tests in your projects matters more than dependency simplicity.
-2. **Does the bridge manage one Chrome process or one per request?** Spec currently says one persistent Chrome with per-request incognito contexts — faster, but a crash in one request can wedge them all. Per-request Chrome is safer but every call pays ~1s startup.
-3. **`/trace` — worth it for v1, or defer?** Playwright traces are great for debugging multi-step flows but add complexity. Defer if v0 + screenshots answer most questions.
-4. **MCP or CLI first?** CLI is faster to build and a coding agent can drive it the same way it drives `kubectl`. MCP is nicer long-term but adds a surface to maintain. Recommend: ship the CLI in v1, add MCP in v2 only if the CLI feels awkward in practice.
-5. **Should `install.ps1` also install Chrome?** Easier UX, but means we have to track Chrome's installer URL. Probably: assume Chrome is installed, fail loudly with a link if not.
+1. **Driver:** `chromedp` (pure Go, CDP-native). Fewer moving parts, no Node sidecar. Playwright symmetry wasn't worth the dependency.
+2. **Chrome lifecycle:** One persistent Chrome process with per-request tabs (not incognito contexts). Auto-relaunches if Chrome dies between requests.
+3. **`/trace`:** Deferred. Screenshots + eval cover the primary use cases; traces add complexity for rare multi-step debugging.
+4. **CLI first, MCP later.** CLI shipped in v1. MCP shim is a v2 candidate if the CLI feels awkward in practice.
+5. **Chrome install:** Assumed pre-installed. `install.ps1` fails with a link if Chrome isn't found.
 
 ## What v0 looks like concretely
 
@@ -186,9 +186,9 @@ To pressure-test the workflow before any Go code is written. Replace the placeho
 **On the headless host (caller):**
 
 ```bash
-# Open reverse tunnel so the GPU host's CDP appears as localhost:9222 here.
+# Open local-forward tunnel so the GPU host's CDP appears as localhost:9222 here.
 # Add -N to skip a remote shell, autossh in production.
-ssh -N -R 9222:localhost:9222 <USER>@<GPU_HOST>
+ssh -N -L 9222:localhost:9222 <USER>@<GPU_HOST>
 ```
 
 ```typescript

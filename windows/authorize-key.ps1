@@ -99,4 +99,4 @@ Write-Host "ACL: removed inheritance, granted $($aclGrant -join ', ')"
 
 Write-Host ""
 Write-Host "Done. sshd reads authorized_keys on each connection - no restart needed."
-Write-Host 'From the caller, retry:  ssh -N -R <port>:localhost:<port> <user>@<this-machine>'
+Write-Host 'From the caller, retry:  ssh -N -L <port>:localhost:<port> <user>@<this-machine>'
