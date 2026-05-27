@@ -16,18 +16,11 @@ This bridge exposes a Windows workstation's real Chrome (with a GPU) to remote c
 
 ## Architecture
 
-```
-+--------------------+            SSH tunnel                 +---------------------+
-|  Headless caller   |  ── ssh -L 51234:localhost:51234 ──→  | GPU host (Windows)  |
-|                    |                                       |                     |
-|  gpu-browser CLI   |     POST http://localhost:51234/…     |  bridge.exe (NSSM)  |
-|                    | ────────────────────────────────────→ |        │            |
-+--------------------+ ←──────────── JSON ─────────────────  |        ▼            |
-                                                             |  Chrome + chromedp  |
-                                                             |  127.0.0.1:51234    |
-                                                             |  WebGPU enabled     |
-                                                             +---------------------+
-```
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="./docs/architecture-dark.svg">
+  <source media="(prefers-color-scheme: light)" srcset="./docs/architecture-light.svg">
+  <img alt="Architecture diagram showing the headless caller connecting to the GPU host via SSH tunnel" src="./docs/architecture-light.svg">
+</picture>
 
 ## Quick start
 
