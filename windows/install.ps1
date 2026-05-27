@@ -106,7 +106,11 @@ if (Get-Service $ServiceName -ErrorAction SilentlyContinue) {
 }
 
 Write-Host "Registering NSSM service $ServiceName ..."
-& nssm.exe install $ServiceName $binaryDest service
+# NSSM is the SCM wrapper, so bridge.exe must run in console mode (no
+# 'service' arg). Passing 'service' would invoke our svc.Run path which
+# tries to dialog with the SCM directly — and since NSSM owns that
+# channel, the child crashes and NSSM reports SERVICE_PAUSED.
+& nssm.exe install $ServiceName $binaryDest
 & nssm.exe set $ServiceName AppDirectory      $InstallDir
 & nssm.exe set $ServiceName DisplayName       "GPU Browser Bridge"
 & nssm.exe set $ServiceName Description       "HTTP API around a GPU-backed Chrome via CDP."
