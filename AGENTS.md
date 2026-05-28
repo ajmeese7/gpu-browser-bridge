@@ -9,7 +9,7 @@ HTTP API wrapping a GPU-backed Chrome on Windows, so headless callers (CI, codin
 - **Host OS**: Windows only (where the GPU lives). Caller can be any OS.
 - **Language**: Go 1.26+, single static binary for both service and CLI.
 - **CDP driver**: chromedp (pure Go, no Node sidecar).
-- **Service wrapper**: NSSM (via Chocolatey: `choco install nssm -y`).
+- **Process supervision**: an **interactive-session logon Scheduled Task** (`windows/install.ps1`), NOT a Windows service. A service runs in Session 0, which has no GPU desktop and hangs on WebGPU pages - see Known Issues. **Install and run need no elevation**: everything (binary, token, profile, log) lives under `%LocalAppData%\gpu-browser-bridge`, and a user can register a self-scoped logon task unelevated. (A non-elevated process cannot replace an admin-created task, so migrating off an old admin/service install needs one elevated `uninstall.ps1` first.)
 - **Port**: 51234 (IANA dynamic/private range).
 - **PowerShell .ps1 files must be ASCII-only** - Windows reads them as Windows-1252 by default. No em-dashes, arrows, smart quotes, or any non-ASCII character.
 - **Never use PowerShell Add-Content for line-oriented files** - it does not prepend a newline separator. Read-modify-write with explicit newlines instead.
@@ -18,7 +18,7 @@ HTTP API wrapping a GPU-backed Chrome on Windows, so headless callers (CI, codin
 ## Build
 
 ```bash
-go build -o bridge.exe ./cmd/bridge
+go build -ldflags "-H=windowsgui" -o bridge.exe ./cmd/bridge   # GUI subsystem: no console window (logs go to a file)
 GOOS=linux GOARCH=amd64 go build -o gpu-browser ./cmd/gpu-browser
 go test ./...
 ```
@@ -28,7 +28,7 @@ go test ./...
 ```
 Caller (headless Linux)                          GPU Host (Windows)
 +---------------------------+                    +---------------------------+
-| gpu-browser CLI           |  SSH -L tunnel     | bridge.exe (NSSM service) |
+| gpu-browser CLI           |  SSH -L tunnel     | bridge.exe (logon task)   |
 |   or curl + bearer token  | -----------------> |   |                       |
 |                           | <--- JSON -------- |   v                       |
 +---------------------------+                    | chromedp (CDP)            |
@@ -41,14 +41,13 @@ Caller (headless Linux)                          GPU Host (Windows)
 
 ## Components
 
-### cmd/bridge (bridge.exe) - Windows service
+### cmd/bridge (bridge.exe) - GPU-host process
 
 Entry point for the GPU host. Wires config + browser + HTTP server.
 
-- Console mode: `bridge.exe` (foreground, for dev)
-- Service mode: `bridge.exe service` (native SCM, for sc.exe users)
-- NSSM mode: NSSM runs `bridge.exe` in console mode (recommended)
-- Token generator: `bridge.exe gen-token <path>`
+- Console mode: `bridge.exe` (this is how the logon task runs it). Built with the GUI subsystem (`-H=windowsgui`) so there is no console window; logs to `%LOCALAPPDATA%\gpu-browser-bridge\bridge.log` (truncated each launch), tee'd to stderr for foreground dev runs.
+- Token generator: `bridge.exe gen-token <path>` (prints to stdout; the GUI-subsystem build does not reach a parent console, so `install.ps1` reads the token back from the file).
+- Deployed via `windows/install.ps1` as an interactive-session logon task (see Process supervision). A `bridge.exe service` SCM path still exists in the code but is unused - a Session-0 service hangs on WebGPU.
 
 ### cmd/gpu-browser - Caller CLI
 
@@ -62,11 +61,13 @@ Config from env (`BRIDGE_URL`, `BRIDGE_TOKEN`) or `~/.config/gpu-browser/config`
 
 ### internal/config
 
-Loads `Config` struct from env vars + on-disk token file. Key defaults:
+Loads `Config` struct from env vars + on-disk token file. Key defaults (all
+under the user's profile so install/run need no elevation):
 - `BRIDGE_BIND_ADDR`: `127.0.0.1:51234`
-- `BRIDGE_TOKEN_PATH`: `%ProgramData%\gpu-browser-bridge\token`
+- `BRIDGE_TOKEN_PATH`: `%LocalAppData%\gpu-browser-bridge\token`
 - `BRIDGE_CHROME_PATH`: auto-detected from `Program Files`
 - `BRIDGE_USER_DATA_DIR`: `%LocalAppData%\gpu-browser-bridge\chrome-profile`
+- `BRIDGE_LOG_PATH`: `%LocalAppData%\gpu-browser-bridge\bridge.log`
 
 Validates: bind address must be loopback, token must be >= 32 chars.
 
@@ -94,8 +95,8 @@ Standard `net/http` server with:
 
 ### windows/ - Install scripts
 
-- `install.ps1` - Builds bridge.exe, generates token, registers NSSM service. Must run elevated.
-- `uninstall.ps1` - Stops service, removes binary. `-Purge` also deletes token + Chrome profile.
+- `install.ps1` - **No admin.** Builds bridge.exe (GUI subsystem), installs to `%LocalAppData%`, generates the token, registers and starts the self-scoped interactive logon task (runs bridge.exe directly, off-screen Chrome). Errors with a one-time migration hint if a legacy admin task blocks it.
+- `uninstall.ps1` - Removes the task and per-user binary unelevated; best-effort (needs admin) for legacy service / `%ProgramFiles%` binary / `%ProgramData%` token. `-Purge` also deletes token, Chrome profile, and logs.
 - `authorize-key.ps1` - Adds a caller's SSH public key to the correct `authorized_keys` file (admin vs standard user detection).
 
 ## Deploying the CLI to the Caller
@@ -117,7 +118,7 @@ BRIDGE_TOKEN=<token from install.ps1 output>
 EOF"
 ```
 
-The token is printed at the end of `install.ps1` output. It can also be read from `%ProgramData%\gpu-browser-bridge\token` on the GPU host.
+The token is printed at the end of `install.ps1` output. It can also be read from `%LocalAppData%\gpu-browser-bridge\token` on the GPU host.
 
 ## SSH Tunnel Setup
 
@@ -161,7 +162,7 @@ gpu-browser healthz
 
 - **Chrome window appears and disappears on launch**: Expected behavior. chromedp launches Chrome with a visible window but the window closes once the anchor tab loads about:blank. The Chrome process stays alive and CDP works fine - screenshots and eval both succeed.
 - **`engineCount: 3` in Babylon.js apps**: React StrictMode / Vite HMR double-invokes effects, creating orphan Babylon engines. Only the last one drives rendering. Not a bridge bug.
-- **webgpureport.org times out**: Heavy SPA that takes > 30s to fully initialize. Increase `timeout_ms` or use `/eval` to query `navigator.gpu.requestAdapter()` directly for WebGPU verification.
+- **WebGPU/GPU-heavy pages time out (`context deadline exceeded`) when the bridge runs as a Session-0 service**: This is the real cause behind the old "webgpureport.org is just a slow SPA" guess. A Windows service (NSSM or `sc.exe`) always runs in **Session 0**, which has no interactive GPU desktop, so GPU-bound renders never settle and `chromedp.Navigate` dies at the timeout. Static pages (example.com) still rasterize, which makes it look like a per-site problem. The identical `bridge.exe` run in an **interactive session** screenshots the same WebGPU page in ~0.5s. Fix: deploy with `windows/install-interactive.ps1` (logon Scheduled Task in the user's session), not the Session-0 service. See `docs/fix-session0-gpu-hang.md`. Verify the session with `Get-Process bridge | Select SessionId` (must be >= 1, not 0).
 
 ## Security Model
 

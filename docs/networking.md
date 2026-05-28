@@ -73,16 +73,13 @@ Both machines join the same tailnet. Bridge binds the tailscale interface; calle
 ### GPU host (Windows)
 
 1. Install [Tailscale for Windows](https://tailscale.com/download/windows), join the tailnet.
-2. Edit the service env to bind the tailscale IP instead of loopback:
+2. Set the bind address in the run-as user's environment and restart the logon task
+   (the task inherits the user environment at launch; other paths use their defaults):
 
 ```powershell
-nssm set gpu-browser-bridge AppEnvironmentExtra `
-  "BRIDGE_BIND_ADDR=<tailscale-ip>:51234" `
-  "BRIDGE_CHROME_PATH=..." `
-  "BRIDGE_USER_DATA_DIR=..." `
-  "BRIDGE_TOKEN_PATH=..." `
-  "BRIDGE_LOG_PATH=..."
-Restart-Service gpu-browser-bridge
+[Environment]::SetEnvironmentVariable("BRIDGE_BIND_ADDR", "<tailscale-ip>:51234", "User")
+Stop-ScheduledTask  -TaskName gpu-browser-bridge
+Start-ScheduledTask -TaskName gpu-browser-bridge
 ```
 
 Important: the bridge's `config.validate()` currently rejects non-loopback `BindAddr` to prevent accidental exposure. Tailscale support is a planned change — see issue tracker, or override the check by binding `127.0.0.1` and using Tailscale's `tailscale serve` to expose loopback to the tailnet:

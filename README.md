@@ -26,16 +26,20 @@ This bridge exposes a Windows workstation's real Chrome (with a GPU) to remote c
 
 ### GPU host (Windows)
 
-> **All Windows steps below need an elevated PowerShell** (right-click PowerShell → "Run as Administrator"). Registering a Windows service, writing to `%ProgramFiles%`, and `choco install` all require admin. The script will refuse to run otherwise.
+> **No admin required.** Everything installs under your user profile
+> (`%LocalAppData%\gpu-browser-bridge`) and runs as a per-user logon Scheduled Task — so you never run an install script as Administrator. The bridge runs in your **interactive desktop session**, which is what gives Chrome a real GPU (a Windows *service* runs in Session 0 with no GPU desktop and hangs on WebGPU).
 
 ```powershell
 # 1. Install Google Chrome:    https://www.google.com/chrome/
-# 2. Install NSSM (via Chocolatey):
-choco install nssm -y          # https://community.chocolatey.org/packages/NSSM
-# 3. Clone this repo, then:
+# 2. Clone this repo, then (normal, non-elevated PowerShell):
 .\windows\install.ps1
+# Builds bridge.exe, generates the token, registers + starts the logon task.
 # Prints the bearer token and the caller-side setup snippet.
 ```
+
+The bridge runs invisibly: `bridge.exe` is built with no console window and Chrome's window is parked off-screen. For unattended reboots, enable auto-logon so a desktop session exists (see [docs/fix-session0-gpu-hang.md](./docs/fix-session0-gpu-hang.md)).
+
+> Upgrading from an older admin/service install? Run `.\windows\uninstall.ps1` once in an **elevated** PowerShell to clear the old admin-created task/service, then run `install.ps1` normally.
 
 ### Caller (Linux / macOS / WSL)
 
@@ -78,7 +82,7 @@ Download from the [latest release](../../releases/latest):
 
 | Binary | Platform | Description |
 |--------|----------|-------------|
-| `bridge.exe` | Windows amd64 | GPU host service |
+| `bridge.exe` | Windows amd64 | GPU host binary |
 | `gpu-browser-linux-amd64` | Linux amd64 | Caller CLI |
 | `gpu-browser-linux-arm64` | Linux arm64 | Caller CLI |
 | `gpu-browser-darwin-amd64` | macOS Intel | Caller CLI |
@@ -95,8 +99,8 @@ sudo mv gpu-browser /usr/local/bin/
 ### Build from source
 
 ```bash
-go build -o bridge.exe ./cmd/bridge        # Windows binary
-go build -o gpu-browser  ./cmd/gpu-browser  # caller CLI (cross-platform)
+go build -ldflags "-H=windowsgui" -o bridge.exe ./cmd/bridge  # Windows host binary (no console window)
+go build -o gpu-browser ./cmd/gpu-browser                     # caller CLI (cross-platform)
 ```
 
 Go 1.26+ required (pulled in by chromedp).

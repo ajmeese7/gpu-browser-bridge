@@ -40,7 +40,7 @@ Open a GitHub issue with:
 - What you expected to happen
 - What actually happened
 - OS, Go version, Chrome version
-- Relevant logs (from `bridge.exe` stdout or the NSSM log)
+- Relevant logs (from `%LOCALAPPDATA%\gpu-browser-bridge\bridge.log`)
 
 ## Security issues
 
