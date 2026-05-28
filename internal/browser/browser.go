@@ -72,6 +72,10 @@ func (b *Browser) launchLocked() error {
 		chromedp.Flag("disable-prompt-on-repost", true),
 		chromedp.Flag("disable-background-networking", true),
 		chromedp.Flag("disable-sync", true),
+		// Park the headful anchor window far off-screen so it is invisible on
+		// the interactive desktop. Off-screen (not minimized) avoids Chrome's
+		// occlusion throttling, so GPU rendering and screenshots are unaffected.
+		chromedp.Flag("window-position", "-32000,-32000"),
 	}
 
 	// Use a background-anchored context so the browser outlives any per-request
