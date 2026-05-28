@@ -1,53 +1,87 @@
-# uninstall.ps1 - remove gpu-browser-bridge service.
+# uninstall.ps1 - remove gpu-browser-bridge.
 #
-# By default the token and Chrome profile are left in place so a re-install
-# can pick them back up. Pass -Purge to delete them.
+# Runs UNELEVATED for a normal per-user install (logon task + %LOCALAPPDATA%).
+# Legacy admin installs (a Session-0 service, an admin-created task, or a binary
+# under %ProgramFiles%) can only be cleaned up from an ELEVATED PowerShell; this
+# script attempts them best-effort and tells you if elevation is needed.
+#
+# By default the token, Chrome profile, and logs are left in place so a
+# re-install can reuse them. Pass -Purge to delete them.
 
 [CmdletBinding()]
 param(
   [switch]$Purge,
-  [string]$ServiceName = "gpu-browser-bridge",
-  [string]$InstallDir  = "$env:ProgramFiles\gpu-browser-bridge"
+  [string]$TaskName = "gpu-browser-bridge"
 )
 
 $ErrorActionPreference = "Stop"
 
-function Require-Admin {
-  $id = [Security.Principal.WindowsIdentity]::GetCurrent()
-  $p  = New-Object Security.Principal.WindowsPrincipal($id)
-  if (-not $p.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
-    throw "uninstall.ps1 must be run as Administrator."
-  }
-}
+$elevated = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+$appDir       = "$env:LOCALAPPDATA\gpu-browser-bridge"
+$legacyInstall= "$env:ProgramFiles\gpu-browser-bridge"
+$legacyData   = "$env:ProgramData\gpu-browser-bridge"
+$needAdmin    = $false
 
-Require-Admin
-
-if (Get-Service $ServiceName -ErrorAction SilentlyContinue) {
-  Write-Host "Stopping and removing service $ServiceName ..."
-  if (Get-Command nssm.exe -ErrorAction SilentlyContinue) {
-    & nssm.exe stop   $ServiceName confirm | Out-Null
-    & nssm.exe remove $ServiceName confirm | Out-Null
-  } else {
-    & sc.exe stop   $ServiceName | Out-Null
-    & sc.exe delete $ServiceName | Out-Null
+# Remove the logon task.
+if (Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue) {
+  Write-Host "Removing task $TaskName ..."
+  try {
+    Stop-ScheduledTask       -TaskName $TaskName -ErrorAction SilentlyContinue
+    Unregister-ScheduledTask -TaskName $TaskName -Confirm:$false -ErrorAction Stop
+  } catch {
+    Write-Host "  could not remove task: $($_.Exception.Message)" -ForegroundColor Yellow
+    $needAdmin = $true
   }
 } else {
-  Write-Host "Service $ServiceName not found; nothing to stop."
+  Write-Host "Task $TaskName not found."
 }
 
-if (Test-Path $InstallDir) {
-  Write-Host "Removing $InstallDir ..."
-  Remove-Item -Recurse -Force $InstallDir
+# Legacy Session-0 service from older installs (needs admin).
+if (Get-Service $TaskName -ErrorAction SilentlyContinue) {
+  Write-Host "Removing legacy service $TaskName ..."
+  if ($elevated) {
+    & sc.exe stop   $TaskName | Out-Null
+    Start-Sleep -Seconds 3
+    & sc.exe delete $TaskName | Out-Null
+  } else {
+    Write-Host "  legacy service present but removal needs elevation." -ForegroundColor Yellow
+    $needAdmin = $true
+  }
+}
+
+# Stop any running bridge.exe and its Chrome.
+Get-Process bridge -ErrorAction SilentlyContinue | ForEach-Object {
+  Write-Host "Stopping bridge.exe (PID $($_.Id)) ..."
+  Stop-Process -Id $_.Id -Force -ErrorAction SilentlyContinue
+}
+Get-CimInstance Win32_Process -Filter "Name='chrome.exe'" -ErrorAction SilentlyContinue |
+  Where-Object { $_.CommandLine -and $_.CommandLine.Contains("gpu-browser-bridge") } |
+  ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
+
+# Remove the per-user binary (keep data unless -Purge).
+if (Test-Path (Join-Path $appDir "bridge.exe")) { Remove-Item -Force (Join-Path $appDir "bridge.exe") }
+if (Test-Path (Join-Path $appDir "run-bridge.cmd")) { Remove-Item -Force (Join-Path $appDir "run-bridge.cmd") } # stale launcher from an old build
+
+# Legacy %ProgramFiles% binary dir (needs admin).
+if (Test-Path $legacyInstall) {
+  if ($elevated) { Write-Host "Removing $legacyInstall ..."; Remove-Item -Recurse -Force $legacyInstall }
+  else { Write-Host "Legacy $legacyInstall present but removal needs elevation." -ForegroundColor Yellow; $needAdmin = $true }
 }
 
 if ($Purge) {
-  $tokenDir   = "$env:ProgramData\gpu-browser-bridge"
-  $profileDir = "$env:LOCALAPPDATA\gpu-browser-bridge"
-  if (Test-Path $tokenDir)   { Remove-Item -Recurse -Force $tokenDir   ; Write-Host "Purged $tokenDir" }
-  if (Test-Path $profileDir) { Remove-Item -Recurse -Force $profileDir ; Write-Host "Purged $profileDir" }
+  if (Test-Path $appDir) { Remove-Item -Recurse -Force $appDir; Write-Host "Purged $appDir" }
+  if (Test-Path $legacyData) {
+    if ($elevated) { Remove-Item -Recurse -Force $legacyData; Write-Host "Purged $legacyData" }
+    else { Write-Host "Legacy $legacyData present but removal needs elevation." -ForegroundColor Yellow; $needAdmin = $true }
+  }
 } else {
   Write-Host ""
-  Write-Host "Token and Chrome profile preserved. Pass -Purge to delete them."
+  Write-Host "Token, Chrome profile, and logs preserved under $appDir. Pass -Purge to delete them."
 }
 
-Write-Host "Uninstall complete." -ForegroundColor Green
+Write-Host ""
+if ($needAdmin) {
+  Write-Host "Some legacy admin-installed pieces remain. Re-run this in an ELEVATED PowerShell to finish." -ForegroundColor Yellow
+} else {
+  Write-Host "Uninstall complete." -ForegroundColor Green
+}
