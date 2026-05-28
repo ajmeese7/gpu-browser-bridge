@@ -1,0 +1,86 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630">
+  <style>
+    text { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif; }
+  </style>
+  <defs>
+    <!-- Software cube: posterized (banded) grays, no highlight -->
+    <linearGradient id="sw-top" x1="0" y1="0" x2="0.3" y2="1">
+      <stop offset="0" stop-color="#5e636b"/><stop offset="0.34" stop-color="#5e636b"/>
+      <stop offset="0.34" stop-color="#4d525a"/><stop offset="0.67" stop-color="#4d525a"/>
+      <stop offset="0.67" stop-color="#3d424a"/><stop offset="1" stop-color="#3d424a"/>
+    </linearGradient>
+    <linearGradient id="sw-left" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#2c3137"/><stop offset="0.5" stop-color="#2c3137"/>
+      <stop offset="0.5" stop-color="#22272d"/><stop offset="1" stop-color="#22272d"/>
+    </linearGradient>
+    <linearGradient id="sw-right" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#3c414a"/><stop offset="0.5" stop-color="#3c414a"/>
+      <stop offset="0.5" stop-color="#30353c"/><stop offset="1" stop-color="#30353c"/>
+    </linearGradient>
+
+    <!-- GPU cube: smooth vivid gradients -->
+    <linearGradient id="gpu-top" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#2dd4ee"/><stop offset="1" stop-color="#3b82f6"/>
+    </linearGradient>
+    <linearGradient id="gpu-left" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#4f46e5"/><stop offset="1" stop-color="#6d28d9"/>
+    </linearGradient>
+    <linearGradient id="gpu-right" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#8b3aed"/><stop offset="1" stop-color="#d422d4"/>
+    </linearGradient>
+    <radialGradient id="gpu-halo" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#a855f7" stop-opacity="0.6"/>
+      <stop offset="0.55" stop-color="#7c3aed" stop-opacity="0.22"/>
+      <stop offset="1" stop-color="#6d28d9" stop-opacity="0"/>
+    </radialGradient>
+
+    <!-- background vignette: a touch of depth, not dead-flat black -->
+    <radialGradient id="bg" cx="0.5" cy="0.42" r="0.75">
+      <stop offset="0" stop-color="#141a23"/>
+      <stop offset="1" stop-color="#0d1117"/>
+    </radialGradient>
+
+    <linearGradient id="arrow" gradientUnits="userSpaceOnUse" x1="545" y1="360" x2="662" y2="360">
+      <stop offset="0" stop-color="#3b82f6"/><stop offset="1" stop-color="#3fb950"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Canvas -->
+  <rect x="0" y="0" width="1200" height="630" fill="url(#bg)"/>
+
+  <!-- Title -->
+  <text x="600" y="92" text-anchor="middle" fill="#f0f6fc" font-size="48" font-weight="700">gpu-browser-bridge</text>
+
+  <!-- ── Left panel: software fallback ─────────────────────── -->
+  <rect x="80" y="150" width="445" height="350" rx="16" fill="#161b22" stroke="#30363d"/>
+  <text x="303" y="202" text-anchor="middle" fill="#8b949e" font-size="26" font-weight="700" letter-spacing="1">SOFTWARE</text>
+  <text x="303" y="232" text-anchor="middle" fill="#6e7681" font-size="18">headless fallback</text>
+
+  <!-- software cube (cx=303, cy=345); top face silhouette is genuinely pixel-stepped -->
+  <ellipse cx="303" cy="470" rx="80" ry="13" fill="#000000" opacity="0.35"/>
+  <polygon points="231,345 303,381 303,465 231,429" fill="url(#sw-left)"/>
+  <polygon points="303,381 375,345 375,429 303,465" fill="url(#sw-right)"/>
+  <polygon points="231,345 249,345 249,336 267,336 267,327 285,327 285,318 303,318 303,309 321,309 321,318 339,318 339,327 357,327 357,336 375,336 375,345 303,381 231,345" fill="url(#sw-top)"/>
+
+  <!-- ── Arrow ─────────────────────────────────────────────── -->
+  <text x="600" y="330" text-anchor="middle" fill="#3fb950" font-size="18" font-weight="600">+ real GPU</text>
+  <polygon points="545,355 635,355 635,347 662,360 635,373 635,365 545,365" fill="url(#arrow)"/>
+
+  <!-- ── Right panel: GPU-backed ───────────────────────────── -->
+  <rect x="675" y="150" width="445" height="350" rx="16" fill="#161b22" stroke="#2ea043"/>
+  <text x="897" y="202" text-anchor="middle" fill="#3fb950" font-size="26" font-weight="700" letter-spacing="1">REAL GPU</text>
+  <text x="897" y="232" text-anchor="middle" fill="#8b949e" font-size="18">WebGPU on your hardware</text>
+
+  <!-- glow halo + floor bloom -->
+  <ellipse cx="897" cy="377" rx="175" ry="150" fill="url(#gpu-halo)"/>
+  <ellipse cx="897" cy="470" rx="95" ry="15" fill="url(#gpu-halo)"/>
+  <!-- GPU cube (cx=897, cy=345) -->
+  <polygon points="825,345 897,381 897,465 825,429" fill="url(#gpu-left)"/>
+  <polygon points="897,381 969,345 969,429 897,465" fill="url(#gpu-right)"/>
+  <polygon points="897,309 969,345 897,381 825,345" fill="url(#gpu-top)"/>
+  <!-- specular highlight on top face -->
+  <ellipse cx="888" cy="337" rx="28" ry="13" fill="#ffffff" opacity="0.30" transform="rotate(-25 888 337)"/>
+
+  <!-- Tagline -->
+  <text x="600" y="575" text-anchor="middle" fill="#c9d1d9" font-size="25" font-weight="500">Real GPU-backed Chrome for headless callers, over a plain HTTP API</text>
+</svg>
