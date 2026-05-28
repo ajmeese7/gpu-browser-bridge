@@ -1,6 +1,6 @@
 # Networking
 
-The bridge binds `127.0.0.1:51234` on the GPU host. To call it from a headless host (the caller), you need to make that port reachable on the caller's loopback as well.
+The bridge binds loopback `:51234` on the GPU host (both IPv4 `127.0.0.1` and IPv6 `::1`). To call it from a headless host (the caller), you need to make that port reachable on the caller's loopback as well.
 
 This doc covers two ways: SSH local-forward tunnel (recommended, works on any network) and Tailscale (zero-tunnel-maintenance, requires Tailscale on both ends).
 
@@ -13,10 +13,10 @@ The caller opens an SSH connection TO the GPU host and creates a local forward (
 On the caller:
 
 ```bash
-ssh -N -L 51234:localhost:51234 <user>@<gpu-host>
+ssh -N -L 51234:127.0.0.1:51234 <user>@<gpu-host>
 ```
 
-`-N` = no remote shell, `-L local:host:remote` = listen on the caller's localhost:51234 and forward to the GPU host's localhost:51234 through the SSH connection. Leave it running; in another terminal:
+`-N` = no remote shell, `-L local:host:remote` = listen on the caller's localhost:51234 and forward to the GPU host's 127.0.0.1:51234 through the SSH connection. Use `127.0.0.1` (not `localhost`) for the remote target -- see Notes. Leave it running; in another terminal:
 
 ```bash
 curl http://localhost:51234/healthz
@@ -37,7 +37,7 @@ ExecStart=/usr/bin/autossh -M 0 -N \
   -o "ServerAliveInterval 30" \
   -o "ServerAliveCountMax 3" \
   -o "ExitOnForwardFailure yes" \
-  -L 51234:localhost:51234 \
+  -L 51234:127.0.0.1:51234 \
   <user>@<gpu-host>
 Restart=always
 RestartSec=10
@@ -62,6 +62,7 @@ curl http://localhost:51234/healthz
 ### Notes
 
 - The tunnel must originate from the caller, not the GPU host. SSH has to know how to reach the GPU host; if it can't, set up a normal SSH connection first (key auth, known_hosts, etc.).
+- **Target the remote forward at `127.0.0.1`, not `localhost`.** `localhost` resolves to IPv6 `::1` on many hosts; the GPU host's sshd then tries to connect the forward to `::1:51234`, and if the bridge isn't answering on IPv6 the channel is closed and the caller sees `Empty reply from server` / `EOF`. The bridge now binds both IPv4 and IPv6 loopback, but `127.0.0.1` in the forward spec removes the ambiguity entirely and works against older bridge builds too.
 - `ExitOnForwardFailure yes` means autossh will tear the tunnel down (and restart) if the port is already bound — useful when the GPU host reboots out from under the tunnel.
 - The GPU host's `sshd` config must allow port forwarding (`AllowTcpForwarding yes`, which is the default).
 

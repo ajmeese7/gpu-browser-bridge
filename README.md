@@ -41,7 +41,8 @@ choco install nssm -y          # https://community.chocolatey.org/packages/NSSM
 
 ```bash
 # 1. Open the SSH tunnel (autossh in production, see docs/networking.md)
-ssh -N -L 51234:localhost:51234 <user>@<gpu-host>
+#    Use 127.0.0.1 (not localhost) for the remote target -- see docs/networking.md.
+ssh -N -L 51234:127.0.0.1:51234 <user>@<gpu-host>
 
 # 2. Configure the CLI
 mkdir -p ~/.config/gpu-browser
