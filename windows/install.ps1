@@ -127,6 +127,14 @@ Write-Host "Registering NSSM service $ServiceName ..."
 & nssm.exe set $ServiceName AppStderr         $logPath
 & nssm.exe set $ServiceName AppRotateFiles    1
 & nssm.exe set $ServiceName AppRotateBytes    10485760
+# On stop, NSSM sends Ctrl+C; the bridge traps it and shuts down Chrome.
+# Give that a real time budget (default 1500ms is too short for Chrome to
+# exit, leaving bridge.exe to be terminated while Chrome is still dying -
+# the orphaned Chrome then holds the profile and blocks the next start).
+# AppKillProcessTree is a backstop; the launch-time self-heal is the real
+# guarantee for orphans that survive anyway (crash, power loss).
+& nssm.exe set $ServiceName AppStopMethodConsole 10000
+& nssm.exe set $ServiceName AppKillProcessTree   1
 & nssm.exe set $ServiceName AppEnvironmentExtra `
     "BRIDGE_CHROME_PATH=$chrome" `
     "BRIDGE_USER_DATA_DIR=$profileDir" `
