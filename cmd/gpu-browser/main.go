@@ -146,6 +146,28 @@ func runHealthz() {
 	}
 }
 
+// parseInterspersed parses flags that may appear before, after, or
+// between positional arguments. Go's flag package stops at the first
+// non-flag token, so a command like `screenshot URL --ignore-https`
+// would otherwise silently drop every flag after the URL. This permutes
+// the arguments so flag position no longer matters, then returns the
+// collected positional arguments.
+func parseInterspersed(fs *flag.FlagSet, args []string) []string {
+	var positional []string
+	for len(args) > 0 {
+		if err := fs.Parse(args); err != nil {
+			fatal("parse flags: %v", err)
+		}
+		rest := fs.Args()
+		if len(rest) == 0 {
+			break
+		}
+		positional = append(positional, rest[0])
+		args = rest[1:]
+	}
+	return positional
+}
+
 func runScreenshot(args []string) {
 	fs := flag.NewFlagSet("screenshot", flag.ExitOnError)
 	out := fs.String("out", "", "")
@@ -154,15 +176,13 @@ func runScreenshot(args []string) {
 	viewport := fs.String("viewport", "", "")
 	ignoreHTTPS := fs.Bool("ignore-https", false, "")
 	settle := fs.Int("settle", 0, "")
-	if err := fs.Parse(args); err != nil {
-		fatal("parse flags: %v", err)
-	}
-	if fs.NArg() < 1 {
+	pos := parseInterspersed(fs, args)
+	if len(pos) < 1 {
 		fatal("screenshot requires a URL")
 	}
 
 	body := map[string]any{
-		"url":                 fs.Arg(0),
+		"url":                 pos[0],
 		"full_page":           *full,
 		"ignore_https_errors": *ignoreHTTPS,
 	}
@@ -209,16 +229,14 @@ func runEval(args []string) {
 	waitFor := fs.String("wait-for", "", "")
 	ignoreHTTPS := fs.Bool("ignore-https", false, "")
 	settle := fs.Int("settle", 0, "")
-	if err := fs.Parse(args); err != nil {
-		fatal("parse flags: %v", err)
-	}
-	if fs.NArg() < 2 {
+	pos := parseInterspersed(fs, args)
+	if len(pos) < 2 {
 		fatal("eval requires a URL and a JS script")
 	}
 
 	body := map[string]any{
-		"url":                 fs.Arg(0),
-		"script":              fs.Arg(1),
+		"url":                 pos[0],
+		"script":              pos[1],
 		"ignore_https_errors": *ignoreHTTPS,
 	}
 	if *waitFor != "" {
