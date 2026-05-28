@@ -50,6 +50,11 @@ func (b *Browser) Start(_ context.Context) error {
 }
 
 func (b *Browser) launchLocked() error {
+	// Clear any Chrome orphaned by a prior hard-kill/crash that still holds
+	// this profile's singleton; otherwise our launch hands off to it and
+	// exits with "Opening in existing browser session".
+	killStaleChrome(b.cfg.UserDataDir, b.log)
+
 	// NOTE: we do NOT extend chromedp.DefaultExecAllocatorOptions because it
 	// includes both Headless and DisableGPU — the latter would defeat the
 	// entire purpose of this service (we want real GPU + WebGPU).
