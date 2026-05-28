@@ -127,7 +127,7 @@ Windows OpenSSH has a critical gotcha for Administrator accounts: it ignores the
 
 The tunnel must use `-L` (local forward), NOT `-R` (remote forward).
 
-From the **caller** (e.g. cyiq):
+From the **caller** (the headless box you run the CLI on):
 ```bash
 ssh -N -L 51234:127.0.0.1:51234 "<windows-username>"@<windows-ip>
 ```
