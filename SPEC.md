@@ -21,7 +21,7 @@ We want headless callers to verify GPU-dependent UI on a workstation with a real
 
 ```
 +--------------------+            SSH tunnel                  +---------------------+
-|  Headless caller   |  ── ssh -L 51234:localhost:51234 ──→  | GPU host (Windows)  |
+|  Headless caller   |  ── ssh -L 51234:127.0.0.1:51234 ──→  | GPU host (Windows)  |
 |  (Linux / cloud)   |                                       |                     |
 |                    |     POST http://localhost:51234/…     |  bridge.exe         |
 |  gpu-browser CLI   | ────────────────────────────────────→ |  (Windows service)  |
@@ -155,7 +155,7 @@ Tools exposed: `screenshot(url, ...)`, `eval(url, script, ...)`, `trace(...)`.
 
 ## Networking decision (v0 → v2)
 
-- **v0/v1: SSH local-forward tunnel from the headless host.** The caller runs `ssh -L 51234:localhost:51234 <user>@<gpu-host>`, making the bridge appear on the caller's loopback. Tunnel command in a systemd unit or cron `@reboot` on the headless host. If the tunnel dies, `autossh` restarts it. Bridge port never leaves Windows localhost.
+- **v0/v1: SSH local-forward tunnel from the headless host.** The caller runs `ssh -L 51234:127.0.0.1:51234 <user>@<gpu-host>`, making the bridge appear on the caller's loopback. Tunnel command in a systemd unit or cron `@reboot` on the headless host. If the tunnel dies, `autossh` restarts it. Bridge port never leaves Windows localhost.
 - **v2 (if needed): Tailscale.** Both machines on a personal tailnet, bridge binds to the tailscale interface, ACL restricts to specific nodes. Removes the tunnel maintenance burden; adds Tailscale dependency.
 
 Start at v0. Only graduate to Tailscale when working from outside the LAN becomes a real need.

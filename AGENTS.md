@@ -129,12 +129,14 @@ The tunnel must use `-L` (local forward), NOT `-R` (remote forward).
 
 From the **caller** (e.g. cyiq):
 ```bash
-ssh -N -L 51234:localhost:51234 "<windows-username>"@<windows-ip>
+ssh -N -L 51234:127.0.0.1:51234 "<windows-username>"@<windows-ip>
 ```
 
-This makes the caller's `localhost:51234` forward to the GPU host's `localhost:51234` through the SSH connection. The bridge is then reachable at `http://localhost:51234` on the caller.
+This makes the caller's `localhost:51234` forward to the GPU host's `127.0.0.1:51234` through the SSH connection. The bridge is then reachable at `http://localhost:51234` on the caller.
 
 `-R` does the opposite (makes a port on the remote forward back to the local) and is NOT what we want here.
+
+**Use `127.0.0.1`, not `localhost`, for the remote target.** On many hosts `localhost` resolves to IPv6 `::1` first; sshd then forwards to `::1:51234`, and if the bridge isn't answering on IPv6 the channel closes and the caller sees `Empty reply from server` / `EOF`. The bridge binds both IPv4 and IPv6 loopback (`internal/server.ListenAndServe`), so `localhost` works against current builds, but `127.0.0.1` is unambiguous and also works against older binaries.
 
 ### Authorizing the caller's SSH key
 

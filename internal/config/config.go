@@ -15,7 +15,8 @@ import (
 
 type Config struct {
 	// BindAddr is the TCP address the HTTP server listens on.
-	// Always loopback; the reverse SSH tunnel is what crosses the network.
+	// Always loopback; the SSH -L tunnel is what crosses the network.
+	// The server binds both IPv4 and IPv6 loopback on this port.
 	BindAddr string
 
 	// Token is the bearer token required on every authenticated request.
@@ -56,7 +57,7 @@ func Load() (*Config, error) {
 }
 
 func (c *Config) validate() error {
-	if !strings.HasPrefix(c.BindAddr, "127.0.0.1:") && !strings.HasPrefix(c.BindAddr, "localhost:") {
+	if !strings.HasPrefix(c.BindAddr, "127.0.0.1:") && !strings.HasPrefix(c.BindAddr, "localhost:") && !strings.HasPrefix(c.BindAddr, "[::1]:") {
 		return fmt.Errorf("BindAddr must be loopback (got %q); exposing the bridge to non-loopback is not supported", c.BindAddr)
 	}
 	if len(c.Token) < 32 {

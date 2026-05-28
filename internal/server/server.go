@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net"
 	"net/http"
 	"strings"
 	"time"
@@ -129,19 +130,46 @@ func writeError(w http.ResponseWriter, status int, err error) {
 }
 
 // ListenAndServe runs the server until ctx is cancelled.
+//
+// It binds both IPv4 (127.0.0.1) and IPv6 (::1) loopback on the configured
+// port. The bridge is reached through an SSH -L tunnel, and sshd may resolve
+// the forward's "localhost" target to either family; binding only one leaves
+// the other dead, which surfaces to the caller as "empty reply from server".
+// Binding both makes the tunnel work regardless of how localhost resolves.
 func (s *Server) ListenAndServe(ctx context.Context) error {
+	_, port, err := net.SplitHostPort(s.cfg.BindAddr)
+	if err != nil {
+		return fmt.Errorf("parse bind addr %q: %w", s.cfg.BindAddr, err)
+	}
+
 	srv := &http.Server{
-		Addr:              s.cfg.BindAddr,
 		Handler:           s.Handler(),
 		ReadHeaderTimeout: 5 * time.Second,
 		MaxHeaderBytes:    1 << 20,
 	}
 
-	errCh := make(chan error, 1)
-	go func() {
-		s.log.Info("listening", "addr", s.cfg.BindAddr)
-		errCh <- srv.ListenAndServe()
-	}()
+	// IPv4 loopback is required; IPv6 loopback is best-effort (some hosts
+	// disable IPv6 entirely, in which case binding ::1 fails and we proceed
+	// with IPv4 only).
+	v4Addr := net.JoinHostPort("127.0.0.1", port)
+	ln4, err := net.Listen("tcp4", v4Addr)
+	if err != nil {
+		return fmt.Errorf("listen on %s: %w", v4Addr, err)
+	}
+
+	errCh := make(chan error, 2)
+	serve := func(ln net.Listener) {
+		s.log.Info("listening", "addr", ln.Addr().String())
+		errCh <- srv.Serve(ln)
+	}
+	go serve(ln4)
+
+	v6Addr := net.JoinHostPort("::1", port)
+	if ln6, err := net.Listen("tcp6", v6Addr); err != nil {
+		s.log.Warn("IPv6 loopback unavailable, serving IPv4 only", "addr", v6Addr, "err", err)
+	} else {
+		go serve(ln6)
+	}
 
 	select {
 	case <-ctx.Done():
