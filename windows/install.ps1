@@ -11,7 +11,6 @@
 #   never finish rendering, so chromedp.Navigate hangs and the request dies at
 #   the 30s timeout. Running bridge.exe in the logged-on user's interactive
 #   session (Session 1+) gives Chrome the real GPU/DWM desktop and fixes it.
-#   See docs/fix-session0-gpu-hang.md.
 #
 #   bridge.exe is built with the Windows GUI subsystem (-H windowsgui) so it has
 #   no console window, and Chrome runs in new headless mode (--headless=new: no
@@ -26,10 +25,6 @@
 #   .\install.ps1                  # build, generate token, register + start task
 #   .\install.ps1 -Token <hex>     # use a specific token instead of generating
 #   .\install.ps1 -SkipBuild       # use existing bridge.exe in repo root
-#
-# Migrating from an older admin/service install: that task was created elevated
-# and cannot be removed unelevated. Run `.\windows\uninstall.ps1` once in an
-# ELEVATED PowerShell to clear it, then run this script normally (no admin).
 
 [CmdletBinding()]
 param(
@@ -74,25 +69,13 @@ if (-not (Test-Path $binarySrc)) {
   throw "bridge.exe not found at $binarySrc. Build first or omit -SkipBuild."
 }
 
-# 2. Remove any prior task we own. If an OLD elevated/admin task exists, an
-#    unelevated process cannot replace it - surface the one-time migration step.
+# 2. Remove any prior instance of this task, and stop a running bridge.exe + its
+#    Chrome so the port and profile are free.
 if (Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue) {
   Write-Host "Stopping and removing existing task $TaskName ..."
-  try {
-    Stop-ScheduledTask       -TaskName $TaskName -ErrorAction SilentlyContinue
-    Unregister-ScheduledTask -TaskName $TaskName -Confirm:$false -ErrorAction Stop
-  } catch {
-    throw @"
-An existing '$TaskName' task could not be removed unelevated ($($_.Exception.Message)).
-It was likely created by an older admin/service install. Run this ONCE in an
-ELEVATED PowerShell to clear it:
-    .\windows\uninstall.ps1
-then re-run this script normally (no admin needed).
-"@
-  }
+  Stop-ScheduledTask       -TaskName $TaskName -ErrorAction SilentlyContinue
+  Unregister-ScheduledTask -TaskName $TaskName -Confirm:$false
 }
-
-# 3. Stop any bridge.exe we own and its Chrome (frees the port + profile lock).
 Get-Process bridge -ErrorAction SilentlyContinue | ForEach-Object {
   Write-Host "Stopping running bridge.exe (PID $($_.Id)) ..."
   Stop-Process -Id $_.Id -Force -ErrorAction SilentlyContinue
@@ -102,13 +85,13 @@ Get-CimInstance Win32_Process -Filter "Name='chrome.exe'" -ErrorAction SilentlyC
   ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
 Start-Sleep -Seconds 1
 
-# 4. Place binary + create the per-user data dir.
+# 3. Place binary + create the per-user data dir.
 Write-Host "Installing to $appDir ..."
 New-Item -ItemType Directory -Force -Path $appDir     | Out-Null
 New-Item -ItemType Directory -Force -Path $profileDir | Out-Null
 Copy-Item -Force $binarySrc $binaryDest
 
-# 5. Token: explicit -Token wins; otherwise reuse an existing token (so reinstalls
+# 4. Token: explicit -Token wins; otherwise reuse an existing token (so reinstalls
 #    do not invalidate the caller's config) or generate a fresh one. No ACL step
 #    is needed - the file sits in the user's NTFS-isolated profile.
 if ($Token -ne "") {
@@ -125,7 +108,7 @@ if ($Token -ne "") {
   $Token = (Get-Content $tokenPath -Raw).Trim()
 }
 
-# 6. Register the interactive logon task for the current user. LogonType
+# 5. Register the interactive logon task for the current user. LogonType
 #    Interactive + AtLogOn + RunLevel Limited = runs in this user's Session 1+
 #    desktop, non-elevated. No admin needed to register a self-scoped task.
 Write-Host "Registering logon task $TaskName for $user ..."
@@ -139,7 +122,7 @@ $settings  = New-ScheduledTaskSettingsSet `
 Register-ScheduledTask -TaskName $TaskName -Action $action -Trigger $trigger `
   -Principal $principal -Settings $settings -Force | Out-Null
 
-# 7. Start now and wait for health (first launch is a cold Chrome start).
+# 6. Start now and wait for health (first launch is a cold Chrome start).
 Write-Host "Starting task ..."
 Start-ScheduledTask -TaskName $TaskName
 $ok = $false
@@ -166,7 +149,7 @@ if ($ok) {
   Write-Host "  gpu-browser healthz"
   Write-Host ""
   Write-Host "NOTE: the logon task only runs once you are logged on. For unattended"
-  Write-Host "reboots, enable auto-logon (see docs/fix-session0-gpu-hang.md)."
+  Write-Host "reboots, enable auto-logon (see windows/README.md)."
 } else {
   Write-Host "WARNING: bridge did not report healthy on 127.0.0.1:51234 within ~30s." -ForegroundColor Yellow
   Write-Host "Last lines of ${logPath}:" -ForegroundColor Yellow
