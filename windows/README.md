@@ -36,7 +36,7 @@ cd C:\path\to\gpu-browser-bridge
 The script builds `bridge.exe` (GUI subsystem, so no console window), installs it and the
 token under `%LocalAppData%\gpu-browser-bridge\`, registers a logon Scheduled Task called
 `gpu-browser-bridge` that runs the bridge non-elevated in your session, and starts it.
-Chrome's window is parked off-screen, so the whole thing is invisible on the desktop.
+Chrome runs in new headless mode (no window), so the whole thing is invisible on the desktop.
 
 A logon task only runs once you are logged on; for unattended reboots enable auto-logon
 (see the fix doc above).

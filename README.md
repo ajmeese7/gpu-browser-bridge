@@ -37,7 +37,7 @@ This bridge exposes a Windows workstation's real Chrome (with a GPU) to remote c
 # Prints the bearer token and the caller-side setup snippet.
 ```
 
-The bridge runs invisibly: `bridge.exe` is built with no console window and Chrome's window is parked off-screen. For unattended reboots, enable auto-logon so a desktop session exists (see [docs/fix-session0-gpu-hang.md](./docs/fix-session0-gpu-hang.md)).
+The bridge runs invisibly: `bridge.exe` is built with no console window and Chrome runs in new headless mode (no window at all — and it still uses the real GPU). For unattended reboots, enable auto-logon so a desktop session exists (see [docs/fix-session0-gpu-hang.md](./docs/fix-session0-gpu-hang.md)).
 
 > Upgrading from an older admin/service install? Run `.\windows\uninstall.ps1` once in an **elevated** PowerShell to clear the old admin-created task/service, then run `install.ps1` normally.
 

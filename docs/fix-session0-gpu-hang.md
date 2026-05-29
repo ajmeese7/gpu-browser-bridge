@@ -42,8 +42,9 @@ generates the token there, registers a per-user logon task (`Run only when user 
 on`, **non-elevated** - the configuration proven to work; running Chrome elevated from a
 task breaks the CDP handshake), starts it, and waits up to ~30s for `healthz`. `bridge.exe`
 is built with the GUI subsystem (no console window) and the task runs it directly; it
-writes its own log to `%LocalAppData%\gpu-browser-bridge\bridge.log`, and Chrome's anchor
-window is parked off-screen, so nothing is visible on the desktop. On success it prints the
+writes its own log to `%LocalAppData%\gpu-browser-bridge\bridge.log`, and Chrome runs in new
+headless mode (no window at all, but still real GPU), so nothing is visible on the desktop
+and there is no window to accidentally close. On success it prints the
 session the bridge is running in - it must be **>= 1**, not 0. On failure it prints the tail
 of the log so you can see the actual error.
 

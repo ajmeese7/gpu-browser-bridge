@@ -76,7 +76,7 @@ Validates: bind address must be loopback, token must be >= 32 chars.
 Supervises one persistent Chrome process via chromedp.
 
 Key design decisions:
-- Does NOT use `chromedp.DefaultExecAllocatorOptions` because it includes `Headless` and `DisableGPU`, both fatal for WebGPU.
+- Builds exec options from scratch instead of `chromedp.DefaultExecAllocatorOptions`, which includes `DisableGPU` (fatal for WebGPU) and OLD headless. Uses NEW headless (`--headless=new`) explicitly: no window at all, but keeps the real GPU - verified `navigator.gpu.requestAdapter()` returns the AMD RDNA-2 adapter and a WebGPU sample renders to a non-black screenshot.
 - Keeps an "anchor tab" (the browserCtx from `chromedp.NewContext`) alive for the lifetime of the service. Closing the anchor tab would close Chrome.
 - The launch timeout uses a goroutine + `time.After` instead of `context.WithTimeout(browserCtx, ...)` because chromedp ties tab lifetime to whichever context the first `Run` uses. Wrapping it in a derived context and cancelling that context kills the anchor tab.
 - Per-request operations (`Screenshot`, `Eval`) create a fresh tab via `chromedp.NewContext(browserCtx)`, do their work, then cancel the tab context.
@@ -95,7 +95,7 @@ Standard `net/http` server with:
 
 ### windows/ - Install scripts
 
-- `install.ps1` - **No admin.** Builds bridge.exe (GUI subsystem), installs to `%LocalAppData%`, generates the token, registers and starts the self-scoped interactive logon task (runs bridge.exe directly, off-screen Chrome). Errors with a one-time migration hint if a legacy admin task blocks it.
+- `install.ps1` - **No admin.** Builds bridge.exe (GUI subsystem), installs to `%LocalAppData%`, generates the token, registers and starts the self-scoped interactive logon task (runs bridge.exe directly, new-headless Chrome - no window). Errors with a one-time migration hint if a legacy admin task blocks it.
 - `uninstall.ps1` - Removes the task and per-user binary unelevated; best-effort (needs admin) for legacy service / `%ProgramFiles%` binary / `%ProgramData%` token. `-Purge` also deletes token, Chrome profile, and logs.
 - `authorize-key.ps1` - Adds a caller's SSH public key to the correct `authorized_keys` file (admin vs standard user detection).
 
@@ -160,7 +160,7 @@ gpu-browser healthz
 
 ## Known Issues
 
-- **Chrome window appears and disappears on launch**: Expected behavior. chromedp launches Chrome with a visible window but the window closes once the anchor tab loads about:blank. The Chrome process stays alive and CDP works fine - screenshots and eval both succeed.
+- **No Chrome window appears**: the bridge runs Chrome in new headless mode (`--headless=new`), so there is no window on the desktop or taskbar - nothing to see and nothing for a user to accidentally close - while the real GPU is still used. (Earlier headful builds showed a window; closing it killed Chrome. `newTab` now also relaunches Chrome if the browser context died, so a crash self-heals on the next request.)
 - **`engineCount: 3` in Babylon.js apps**: React StrictMode / Vite HMR double-invokes effects, creating orphan Babylon engines. Only the last one drives rendering. Not a bridge bug.
 - **WebGPU/GPU-heavy pages time out (`context deadline exceeded`) when the bridge runs as a Session-0 service**: This is the real cause behind the old "webgpureport.org is just a slow SPA" guess. A Windows service (NSSM or `sc.exe`) always runs in **Session 0**, which has no interactive GPU desktop, so GPU-bound renders never settle and `chromedp.Navigate` dies at the timeout. Static pages (example.com) still rasterize, which makes it look like a per-site problem. The identical `bridge.exe` run in an **interactive session** screenshots the same WebGPU page in ~0.5s. Fix: deploy with `windows/install-interactive.ps1` (logon Scheduled Task in the user's session), not the Session-0 service. See `docs/fix-session0-gpu-hang.md`. Verify the session with `Get-Process bridge | Select SessionId` (must be >= 1, not 0).
 

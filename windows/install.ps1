@@ -14,8 +14,9 @@
 #   See docs/fix-session0-gpu-hang.md.
 #
 #   bridge.exe is built with the Windows GUI subsystem (-H windowsgui) so it has
-#   no console window, and Chrome's anchor window is parked off-screen, so the
-#   deployment is fully invisible on the desktop while still GPU-accelerated.
+#   no console window, and Chrome runs in new headless mode (--headless=new: no
+#   window, but still real GPU), so the deployment is fully invisible on the
+#   desktop while still GPU-accelerated.
 #
 # Prerequisites:
 #   - Go toolchain on PATH (unless -SkipBuild and bridge.exe is in the repo root).
