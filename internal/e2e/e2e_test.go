@@ -110,6 +110,16 @@ func appServer(t *testing.T) *httptest.Server {
 		fmt.Fprint(w, `<!doctype html><html><body style="margin:0">`+
 			`<div style="width:100vw;height:100vh;background:rgb(0,128,255)"></div></body></html>`)
 	})
+	mux.HandleFunc("/raf", func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/html")
+		// Paints its color only inside requestAnimationFrame, which is paused in
+		// background tabs. Capturing it therefore requires the per-request tab
+		// to be foregrounded (regression guard for the bringToFront fix).
+		fmt.Fprint(w, `<!doctype html><html><body style="margin:0">`+
+			`<div id="x" style="width:100vw;height:100vh;background:#fff"></div>`+
+			`<script>requestAnimationFrame(()=>requestAnimationFrame(()=>{`+
+			`document.getElementById('x').style.background='rgb(0,128,255)';}));</script></body></html>`)
+	})
 	ts := httptest.NewServer(mux)
 	t.Cleanup(ts.Close)
 	return ts
@@ -229,6 +239,30 @@ func TestE2E(t *testing.T) {
 		// expect roughly rgb(0,128,255): blue-dominant, low red
 		if b8 < 200 || r8 > 60 || g8 < 90 || g8 > 170 {
 			t.Fatalf("center pixel rgb(%d,%d,%d) not ~rgb(0,128,255)", r8, g8, b8)
+		}
+	})
+
+	t.Run("screenshot_foregrounds_tab", func(t *testing.T) {
+		if v := gpuVendor(t, bridge, app.URL+"/"); softwareGPU(v) {
+			t.Skipf("no hardware GPU (adapter %q); Page.captureScreenshot needs a GPU compositor", v)
+		}
+		// /raf paints only inside requestAnimationFrame; rAF is paused in
+		// background tabs, so without bringToFront this hangs or stays white.
+		res := post(t, bridge, "/screenshot", map[string]any{
+			"url": app.URL + "/raf", "viewport_w": 160, "viewport_h": 160, "settle_ms": 500, "timeout_ms": 30000,
+		})
+		var b64 string
+		json.Unmarshal(res["png_b64"], &b64)
+		raw, _ := base64.StdEncoding.DecodeString(b64)
+		img, _, err := image.Decode(bytes.NewReader(raw))
+		if err != nil {
+			t.Fatalf("decode png: %v", err)
+		}
+		b := img.Bounds()
+		r, g, bl, _ := img.At(b.Dx()/2, b.Dy()/2).RGBA()
+		r8, g8, b8 := r>>8, g>>8, bl>>8
+		if b8 < 200 || r8 > 60 || g8 < 90 || g8 > 170 {
+			t.Fatalf("rAF-painted pixel rgb(%d,%d,%d) not ~rgb(0,128,255) - tab not foregrounded?", r8, g8, b8)
 		}
 	})
 

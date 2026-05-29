@@ -347,6 +347,14 @@ func (b *Browser) Screenshot(ctx context.Context, req ScreenshotRequest) (*Scree
 	actions = append(actions, network.Enable())
 	actions = append(actions, req.preNavigateActions()...)
 	actions = append(actions, chromedp.Navigate(req.URL))
+	// Bring this per-request tab to the foreground before it settles/captures.
+	// The anchor tab otherwise holds the foreground, and headless Chrome does
+	// not composite background tabs (requestAnimationFrame is paused there), so
+	// Page.captureScreenshot hangs forever on pages that only paint once
+	// foregrounded - e.g. apps that render via rAF (React, Babylon, ...).
+	actions = append(actions, chromedp.ActionFunc(func(ctx context.Context) error {
+		return page.BringToFront().Do(ctx)
+	}))
 	if req.WaitFor != "" {
 		actions = append(actions, chromedp.WaitVisible(req.WaitFor))
 	}
