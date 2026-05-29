@@ -13,11 +13,13 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/ajmeese7/gpu-browser-bridge/internal/config"
 	"github.com/chromedp/cdproto/network"
+	"github.com/chromedp/cdproto/page"
 	"github.com/chromedp/cdproto/runtime"
 	"github.com/chromedp/cdproto/security"
 	"github.com/chromedp/chromedp"
@@ -198,6 +200,103 @@ type FailedRequest struct {
 	Error  string `json:"error,omitempty"`
 }
 
+// SessionContext is optional per-request session material applied to the tab
+// before navigation, so the bridge can screenshot or eval pages that need an
+// authenticated session. All fields are optional. It is embedded in both
+// request types, so its fields appear at the top level of the JSON body.
+type SessionContext struct {
+	// Cookies are set via CDP Network.setCookies before navigation.
+	Cookies []Cookie `json:"cookies,omitempty"`
+	// Headers are added to every request the page makes (e.g. Authorization).
+	Headers map[string]string `json:"headers,omitempty"`
+	// LocalStorage entries are seeded into the page's origin before its own
+	// scripts run.
+	LocalStorage map[string]string `json:"local_storage,omitempty"`
+}
+
+// Cookie mirrors the subset of CDP CookieParam we expose. Provide either URL
+// (Chrome infers domain/path/secure from it) or an explicit Domain.
+type Cookie struct {
+	Name     string `json:"name"`
+	Value    string `json:"value"`
+	URL      string `json:"url,omitempty"`
+	Domain   string `json:"domain,omitempty"`
+	Path     string `json:"path,omitempty"`
+	Secure   bool   `json:"secure,omitempty"`
+	HTTPOnly bool   `json:"http_only,omitempty"`
+	SameSite string `json:"same_site,omitempty"` // Strict | Lax | None
+}
+
+// preNavigateActions returns the CDP actions that apply this session material.
+// They MUST run after network.Enable() and before chromedp.Navigate.
+func (s SessionContext) preNavigateActions() []chromedp.Action {
+	var acts []chromedp.Action
+	if len(s.Headers) > 0 {
+		acts = append(acts, network.SetExtraHTTPHeaders(toHeaders(s.Headers)))
+	}
+	if params := toCookieParams(s.Cookies); len(params) > 0 {
+		acts = append(acts, network.SetCookies(params))
+	}
+	if len(s.LocalStorage) > 0 {
+		script := localStorageScript(s.LocalStorage)
+		acts = append(acts, chromedp.ActionFunc(func(ctx context.Context) error {
+			_, err := page.AddScriptToEvaluateOnNewDocument(script).Do(ctx)
+			return err
+		}))
+	}
+	return acts
+}
+
+func toHeaders(m map[string]string) network.Headers {
+	h := network.Headers{}
+	for k, v := range m {
+		h[k] = v
+	}
+	return h
+}
+
+func toCookieParams(cs []Cookie) []*network.CookieParam {
+	if len(cs) == 0 {
+		return nil
+	}
+	params := make([]*network.CookieParam, 0, len(cs))
+	for _, c := range cs {
+		p := &network.CookieParam{
+			Name:     c.Name,
+			Value:    c.Value,
+			URL:      c.URL,
+			Domain:   c.Domain,
+			Path:     c.Path,
+			Secure:   c.Secure,
+			HTTPOnly: c.HTTPOnly,
+		}
+		if c.SameSite != "" {
+			p.SameSite = network.CookieSameSite(c.SameSite)
+		}
+		params = append(params, p)
+	}
+	return params
+}
+
+// localStorageScript builds JS that seeds localStorage entries. It runs via
+// AddScriptToEvaluateOnNewDocument, i.e. in the target origin before the page's
+// own scripts, so values are present when the app boots.
+func localStorageScript(items map[string]string) string {
+	var b strings.Builder
+	b.WriteString("try{")
+	for k, v := range items {
+		kb, _ := json.Marshal(k)
+		vb, _ := json.Marshal(v)
+		b.WriteString("localStorage.setItem(")
+		b.Write(kb)
+		b.WriteString(",")
+		b.Write(vb)
+		b.WriteString(");")
+	}
+	b.WriteString("}catch(e){}")
+	return b.String()
+}
+
 // ScreenshotRequest is the JSON body for /screenshot.
 type ScreenshotRequest struct {
 	URL          string `json:"url"`
@@ -208,6 +307,7 @@ type ScreenshotRequest struct {
 	TimeoutMS    int    `json:"timeout_ms,omitempty"`
 	IgnoreHTTPS  bool   `json:"ignore_https_errors,omitempty"`
 	SettleMillis int    `json:"settle_ms,omitempty"` // extra wait after load
+	SessionContext
 }
 
 type ScreenshotResult struct {
@@ -244,7 +344,9 @@ func (b *Browser) Screenshot(ctx context.Context, req ScreenshotRequest) (*Scree
 	if req.IgnoreHTTPS {
 		actions = append(actions, security.SetIgnoreCertificateErrors(true))
 	}
-	actions = append(actions, network.Enable(), chromedp.Navigate(req.URL))
+	actions = append(actions, network.Enable())
+	actions = append(actions, req.preNavigateActions()...)
+	actions = append(actions, chromedp.Navigate(req.URL))
 	if req.WaitFor != "" {
 		actions = append(actions, chromedp.WaitVisible(req.WaitFor))
 	}
@@ -276,6 +378,7 @@ type EvalRequest struct {
 	TimeoutMS    int    `json:"timeout_ms,omitempty"`
 	IgnoreHTTPS  bool   `json:"ignore_https_errors,omitempty"`
 	SettleMillis int    `json:"settle_ms,omitempty"`
+	SessionContext
 }
 
 type EvalResult struct {
@@ -309,6 +412,7 @@ func (b *Browser) Eval(ctx context.Context, req EvalRequest) (*EvalResult, error
 	if req.IgnoreHTTPS {
 		actions = append(actions, security.SetIgnoreCertificateErrors(true))
 	}
+	actions = append(actions, req.preNavigateActions()...)
 	actions = append(actions, chromedp.Navigate(req.URL))
 	if req.WaitFor != "" {
 		actions = append(actions, chromedp.WaitVisible(req.WaitFor))
