@@ -72,7 +72,7 @@ All POST endpoints require `Authorization: Bearer <token>`. `GET /healthz` is un
 
 `script` runs in page context after navigation + optional wait; the final expression's value is returned. Promises are awaited.
 
-`cookies`, `headers`, and `local_storage` are optional session material applied before navigation, so you can capture pages behind a login. `headers` is a `{name: value}` map sent with every request (e.g. `{"Authorization": "Bearer ..."}`); `cookies` is an array of `{name, value, url?|domain?, path?, secure?, http_only?, same_site?}` (give `url` and Chrome infers the rest); `local_storage` is a `{key: value}` map seeded into the target origin before its own scripts run. On the CLI these are `--header "K: V"`, `--cookie name=value`, and `--local-storage k=v` (each repeatable).
+`cookies`, `headers`, and `local_storage` are optional session material applied before navigation, so you can capture pages behind a login. `headers` is a `{name: value}` map sent with every request (e.g. `{"Authorization": "Bearer ..."}`); `cookies` is an array of `{name, value, url?|domain?, path?, secure?, http_only?, same_site?}` (give `url` and Chrome infers the rest); `local_storage` is a `{key: value}` map seeded into the target origin before its own scripts run. On the CLI these are `--header "K: V"`, `--cookie name=value`, and `--local-storage k=v` (each repeatable). See [docs/authenticated-captures.md](./docs/authenticated-captures.md) for full recipes, including driving a JS form login.
 
 ## Install
 
@@ -108,6 +108,7 @@ Go 1.26+ required (pulled in by chromedp).
 ## Docs
 
 - [SPEC.md](./SPEC.md) — full design, milestones (v0–v2), design decisions
+- [docs/authenticated-captures.md](./docs/authenticated-captures.md) — capturing pages behind a login (cookie/header/storage injection, form login)
 - [docs/networking.md](./docs/networking.md) — SSH tunnel and Tailscale recipes
 - [docs/security.md](./docs/security.md) — threat model, what's protected and not
 - [windows/README.md](./windows/README.md) — install / uninstall / token rotation
