@@ -10,8 +10,8 @@ import (
 
 // killStaleChrome terminates any Chrome process still bound to userDataDir.
 //
-// chromedp launches Chrome as a child of bridge.exe. If the service is
-// hard-killed (NSSM stop timing out, a crash, a reboot), that child can be
+// chromedp launches Chrome as a child of bridge.exe. If bridge.exe is
+// hard-killed (a crash, a reboot, the logon task ending), that child can be
 // orphaned while still holding the profile's singleton. The next launch then
 // fails with "Opening in existing browser session" because the new Chrome
 // just hands off to the orphan and exits. Clearing the orphan before we

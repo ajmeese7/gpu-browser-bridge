@@ -4,8 +4,10 @@
 *.dll
 *.so
 *.dylib
-gpu-browser
-bridge
+# Built output binaries at repo root only (leading slash); bare names would
+# also ignore the cmd/gpu-browser and cmd/bridge source directories.
+/gpu-browser
+/bridge
 
 # Test binary, built with `go test -c`
 *.test

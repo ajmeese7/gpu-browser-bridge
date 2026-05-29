@@ -123,7 +123,10 @@ func defaultUserDataDir() string {
 }
 
 func defaultTokenPath() string {
-	base := os.Getenv("PROGRAMDATA")
+	// LOCALAPPDATA, not PROGRAMDATA: the bridge installs and runs entirely in
+	// the user's profile so no step needs elevation. The profile dir is
+	// NTFS-isolated to this user, so the token is not world-readable.
+	base := os.Getenv("LOCALAPPDATA")
 	if base == "" {
 		base = os.TempDir()
 	}
@@ -131,7 +134,9 @@ func defaultTokenPath() string {
 }
 
 func defaultLogPath() string {
-	base := os.Getenv("PROGRAMDATA")
+	// LOCALAPPDATA, not PROGRAMDATA: the bridge runs non-elevated in the user's
+	// interactive session and cannot write under %ProgramData%.
+	base := os.Getenv("LOCALAPPDATA")
 	if base == "" {
 		base = os.TempDir()
 	}

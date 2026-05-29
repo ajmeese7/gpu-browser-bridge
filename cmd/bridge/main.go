@@ -12,9 +12,11 @@ package main
 import (
 	"context"
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 
 	"github.com/ajmeese7/gpu-browser-bridge/internal/browser"
@@ -44,21 +46,55 @@ func main() {
 }
 
 func runConsole() {
-	log := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo}))
+	cfg, cfgErr := config.Load()
+
+	// Console mode logs to a file so the interactive deployment still records
+	// output: bridge.exe is built with the GUI subsystem (no console window)
+	// and launched directly by a Scheduled Task, so there is no console and no
+	// redirection. We tee to stderr too, which is harmless for a foreground
+	// dev run (and a no-op when stderr is a dead handle under the GUI subsystem).
+	logPath := fallbackLogPath()
+	if cfg != nil && cfg.LogPath != "" {
+		logPath = cfg.LogPath
+	}
+	log := slog.New(slog.NewTextHandler(logWriter(logPath), &slog.HandlerOptions{Level: slog.LevelInfo}))
+
+	if cfgErr != nil {
+		log.Error("bridge exited with error", "err", fmt.Errorf("load config: %w", cfgErr))
+		os.Exit(1)
+	}
+
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	if err := run(ctx, log); err != nil {
+	if err := runWithConfig(ctx, log, cfg); err != nil {
 		log.Error("bridge exited with error", "err", err)
 		os.Exit(1)
 	}
 }
 
-func run(ctx context.Context, log *slog.Logger) error {
-	cfg, err := config.Load()
-	if err != nil {
-		return fmt.Errorf("load config: %w", err)
+// logWriter opens path (truncating to bound growth across launches) and tees
+// to stderr. The file is listed first so it always receives the bytes even
+// when stderr is a dead handle. Falls back to stderr alone if the file can't
+// be opened.
+func logWriter(path string) io.Writer {
+	if path != "" {
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err == nil {
+			if f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o644); err == nil {
+				return io.MultiWriter(f, os.Stderr)
+			}
+		}
 	}
-	return runWithConfig(ctx, log, cfg)
+	return os.Stderr
+}
+
+// fallbackLogPath mirrors config's default, used only when config.Load fails
+// before we have a Config (so we can still record why it failed).
+func fallbackLogPath() string {
+	base := os.Getenv("LOCALAPPDATA")
+	if base == "" {
+		base = os.TempDir()
+	}
+	return filepath.Join(base, "gpu-browser-bridge", "bridge.log")
 }
 
 func runWithConfig(ctx context.Context, log *slog.Logger, cfg *config.Config) error {

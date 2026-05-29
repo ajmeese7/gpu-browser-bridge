@@ -56,8 +56,8 @@ func (b *Browser) launchLocked() error {
 	killStaleChrome(b.cfg.UserDataDir, b.log)
 
 	// NOTE: we do NOT extend chromedp.DefaultExecAllocatorOptions because it
-	// includes both Headless and DisableGPU — the latter would defeat the
-	// entire purpose of this service (we want real GPU + WebGPU).
+	// includes DisableGPU (fatal for WebGPU) and OLD headless. We set NEW
+	// headless (--headless=new) explicitly below, which keeps the real GPU.
 	opts := []chromedp.ExecAllocatorOption{
 		chromedp.ExecPath(b.cfg.ChromePath),
 		chromedp.UserDataDir(b.cfg.UserDataDir),
@@ -72,6 +72,14 @@ func (b *Browser) launchLocked() error {
 		chromedp.Flag("disable-prompt-on-repost", true),
 		chromedp.Flag("disable-background-networking", true),
 		chromedp.Flag("disable-sync", true),
+		// New headless mode: the full browser with NO window at all, so nothing
+		// shows on the desktop or taskbar and a user cannot accidentally close
+		// it. Unlike OLD headless it keeps the real GPU - verified
+		// navigator.gpu.requestAdapter() returns the AMD RDNA-2 adapter and a
+		// WebGPU sample renders to a non-black screenshot. We still run this via
+		// an interactive logon session (see windows/install.ps1) - the
+		// configuration proven to deliver the real GPU.
+		chromedp.Flag("headless", "new"),
 	}
 
 	// Use a background-anchored context so the browser outlives any per-request
@@ -150,8 +158,21 @@ func (b *Browser) Healthy() bool {
 // cancel must be called by the caller to close the tab.
 func (b *Browser) newTab(_ context.Context) (context.Context, context.CancelFunc, error) {
 	b.mu.Lock()
-	if b.allocCtx == nil || b.allocCtx.Err() != nil {
-		// Chrome died; relaunch.
+	if b.allocCtx == nil || b.allocCtx.Err() != nil ||
+		b.browserCtx == nil || b.browserCtx.Err() != nil {
+		// Chrome is gone (process exited/crashed, or its last window/anchor tab
+		// was closed). The allocator can outlive the Chrome process, so we must
+		// check browserCtx too, not just allocCtx - otherwise we hand out a
+		// canceled context and every request fails with "context canceled".
+		// Tear down the stale contexts before relaunching to avoid leaking them.
+		if b.browserCancel != nil {
+			b.browserCancel()
+			b.browserCancel = nil
+		}
+		if b.allocCancel != nil {
+			b.allocCancel()
+			b.allocCancel = nil
+		}
 		if err := b.launchLocked(); err != nil {
 			b.mu.Unlock()
 			return nil, nil, err

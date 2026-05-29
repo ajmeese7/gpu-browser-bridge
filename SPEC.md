@@ -24,7 +24,7 @@ We want headless callers to verify GPU-dependent UI on a workstation with a real
 |  Headless caller   |  ── ssh -L 51234:127.0.0.1:51234 ──→  | GPU host (Windows)  |
 |  (Linux / cloud)   |                                       |                     |
 |                    |     POST http://localhost:51234/…     |  bridge.exe         |
-|  gpu-browser CLI   | ────────────────────────────────────→ |  (Windows service)  |
+|  gpu-browser CLI   | ────────────────────────────────────→ |  (logon task)       |
 |  or MCP client     | ←──────────── JSON ─────────────────  |        │            |
 +--------------------+                                       |        ▼            |
                                                              |  Playwright / CDP   |
@@ -59,7 +59,7 @@ This proves networking + CDP + WebGPU. If it works, build v1. If it doesn't, the
 
 ### v1 — The actual service
 
-A small Go HTTP server (`bridge.exe`) wrapping Chrome + a CDP driver, installed as a Windows service via NSSM.
+A small Go HTTP server (`bridge.exe`) wrapping Chrome + a CDP driver, run as an interactive-session logon Scheduled Task (NOT a Windows service — a service runs in Session 0 with no GPU desktop and hangs on WebGPU).
 
 #### Endpoints
 
@@ -91,11 +91,10 @@ All require `Authorization: Bearer <token>` header. Token loaded from `%PROGRAMD
 #### Installation
 
 ```powershell
-# One-time:
+# One-time (no admin):
 .\install.ps1
-# Generates a token, registers NSSM service "gpu-browser-bridge",
-# adds Defender exclusion for the bridge-chrome profile dir,
-# prints token + setup instructions for the remote.
+# Installs under %LocalAppData%, generates a token, registers the per-user
+# logon task "gpu-browser-bridge", prints token + setup for the remote.
 ```
 
 #### Repo layout for v1
@@ -106,7 +105,7 @@ gpu-browser-bridge/
 ├── SPEC.md                      # This file
 ├── go.mod / go.sum
 ├── cmd/
-│   ├── bridge/                  # The Windows service (bridge.exe)
+│   ├── bridge/                  # The GPU-host process (bridge.exe)
 │   │   └── main.go
 │   └── gpu-browser/             # Remote CLI (built for Linux/macOS)
 │       └── main.go
@@ -115,7 +114,7 @@ gpu-browser-bridge/
 │   ├── server/                  # HTTP handlers, auth, logging
 │   └── config/                  # token loading, paths
 ├── windows/
-│   ├── install.ps1              # NSSM register, token gen, firewall
+│   ├── install.ps1              # logon-task register, token gen, firewall
 │   ├── uninstall.ps1
 │   └── README.md                # Windows-specific notes
 └── docs/
@@ -149,7 +148,7 @@ Tools exposed: `screenshot(url, ...)`, `eval(url, script, ...)`, `trace(...)`.
 | Stolen bearer token | Token rotation script; token in `%PROGRAMDATA%`, ACL'd to admins + service account |
 | Malicious `eval` script reads cookies from user's real browser | Bridge Chrome uses dedicated `--user-data-dir`, separate from user's daily Chrome; logged into only test accounts |
 | `eval` script exfiltrates data to an attacker domain | Out of scope for v1; the threat is "the trusted caller went rogue," which we accept. Could add an outbound domain allowlist later if needed. |
-| `bridge.exe` is replaced by an attacker | NSSM service runs as a low-priv account, binary path ACL'd, signed binary in CI if we get fancy |
+| `bridge.exe` is replaced by an attacker | admin-free install keeps the binary in the user's profile (`%LocalAppData%`); a process already running as that user can drive the bridge anyway, so this adds no exposure on a single-user host. NTFS blocks other non-admin users; sign the binary in CI for tamper-evidence |
 
 **What we are NOT protecting:** the bridge Chrome profile. Anything logged into it (admin accounts on staging boxes, dev credentials) is reachable by any authenticated bridge caller. Treat the profile like a shared test account, not a personal one.
 

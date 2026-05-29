@@ -1,53 +1,43 @@
-# uninstall.ps1 - remove gpu-browser-bridge service.
+# uninstall.ps1 - remove gpu-browser-bridge.
 #
-# By default the token and Chrome profile are left in place so a re-install
-# can pick them back up. Pass -Purge to delete them.
+# Runs unelevated: removes the per-user logon task and stops the bridge. By
+# default the token, Chrome profile, and logs are left in place so a re-install
+# can reuse them. Pass -Purge to delete them.
 
 [CmdletBinding()]
 param(
   [switch]$Purge,
-  [string]$ServiceName = "gpu-browser-bridge",
-  [string]$InstallDir  = "$env:ProgramFiles\gpu-browser-bridge"
+  [string]$TaskName = "gpu-browser-bridge"
 )
 
 $ErrorActionPreference = "Stop"
 
-function Require-Admin {
-  $id = [Security.Principal.WindowsIdentity]::GetCurrent()
-  $p  = New-Object Security.Principal.WindowsPrincipal($id)
-  if (-not $p.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
-    throw "uninstall.ps1 must be run as Administrator."
-  }
-}
+$appDir = "$env:LOCALAPPDATA\gpu-browser-bridge"
 
-Require-Admin
-
-if (Get-Service $ServiceName -ErrorAction SilentlyContinue) {
-  Write-Host "Stopping and removing service $ServiceName ..."
-  if (Get-Command nssm.exe -ErrorAction SilentlyContinue) {
-    & nssm.exe stop   $ServiceName confirm | Out-Null
-    & nssm.exe remove $ServiceName confirm | Out-Null
-  } else {
-    & sc.exe stop   $ServiceName | Out-Null
-    & sc.exe delete $ServiceName | Out-Null
-  }
+# Remove the logon task.
+if (Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue) {
+  Write-Host "Removing task $TaskName ..."
+  Stop-ScheduledTask       -TaskName $TaskName -ErrorAction SilentlyContinue
+  Unregister-ScheduledTask -TaskName $TaskName -Confirm:$false
 } else {
-  Write-Host "Service $ServiceName not found; nothing to stop."
+  Write-Host "Task $TaskName not found."
 }
 
-if (Test-Path $InstallDir) {
-  Write-Host "Removing $InstallDir ..."
-  Remove-Item -Recurse -Force $InstallDir
+# Stop any running bridge.exe and its Chrome.
+Get-Process bridge -ErrorAction SilentlyContinue | ForEach-Object {
+  Write-Host "Stopping bridge.exe (PID $($_.Id)) ..."
+  Stop-Process -Id $_.Id -Force -ErrorAction SilentlyContinue
 }
+Get-CimInstance Win32_Process -Filter "Name='chrome.exe'" -ErrorAction SilentlyContinue |
+  Where-Object { $_.CommandLine -and $_.CommandLine.Contains("gpu-browser-bridge") } |
+  ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
 
 if ($Purge) {
-  $tokenDir   = "$env:ProgramData\gpu-browser-bridge"
-  $profileDir = "$env:LOCALAPPDATA\gpu-browser-bridge"
-  if (Test-Path $tokenDir)   { Remove-Item -Recurse -Force $tokenDir   ; Write-Host "Purged $tokenDir" }
-  if (Test-Path $profileDir) { Remove-Item -Recurse -Force $profileDir ; Write-Host "Purged $profileDir" }
+  if (Test-Path $appDir) { Remove-Item -Recurse -Force $appDir; Write-Host "Purged $appDir" }
 } else {
+  Remove-Item (Join-Path $appDir "bridge.exe") -Force -ErrorAction SilentlyContinue
   Write-Host ""
-  Write-Host "Token and Chrome profile preserved. Pass -Purge to delete them."
+  Write-Host "Token, Chrome profile, and logs preserved under $appDir. Pass -Purge to delete them."
 }
 
 Write-Host "Uninstall complete." -ForegroundColor Green
