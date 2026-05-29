@@ -156,6 +156,29 @@ func evalString(t *testing.T, bridge, url, script string, extra map[string]any) 
 	return s
 }
 
+// gpuVendor returns the WebGPU adapter vendor (lowercased), or "" when no
+// adapter/API is available. localhost is a secure context, so navigator.gpu is
+// present.
+func gpuVendor(t *testing.T, bridge, url string) string {
+	script := `(async()=>{if(!navigator.gpu)return '';` +
+		`const a=await navigator.gpu.requestAdapter();if(!a)return '';` +
+		`return ((a.info&&a.info.vendor)||'adapter');})()`
+	return strings.ToLower(strings.TrimSpace(evalString(t, bridge, url, script, nil)))
+}
+
+// softwareGPU reports whether the adapter is a software/fallback (SwiftShader
+// reports vendor "google") or absent. Page.captureScreenshot needs a real GPU
+// compositor to produce a frame, so screenshot capture is gated on this.
+func softwareGPU(vendor string) bool {
+	switch vendor {
+	case "", "google", "adapter":
+		return true
+	}
+	return strings.Contains(vendor, "swiftshader") ||
+		strings.Contains(vendor, "llvmpipe") ||
+		strings.Contains(vendor, "software")
+}
+
 func TestE2E(t *testing.T) {
 	bridge := startBridge(t)
 	app := appServer(t)
@@ -184,6 +207,9 @@ func TestE2E(t *testing.T) {
 	})
 
 	t.Run("screenshot_renders_pixels", func(t *testing.T) {
+		if v := gpuVendor(t, bridge, app.URL+"/"); softwareGPU(v) {
+			t.Skipf("no hardware GPU (adapter %q); Page.captureScreenshot needs a GPU compositor", v)
+		}
 		res := post(t, bridge, "/screenshot", map[string]any{
 			"url": app.URL + "/color", "viewport_w": 160, "viewport_h": 160, "settle_ms": 300, "timeout_ms": 30000,
 		})
@@ -234,14 +260,10 @@ func TestE2E(t *testing.T) {
 	})
 
 	t.Run("webgpu_adapter", func(t *testing.T) {
-		// localhost is a secure context, so navigator.gpu is available.
-		script := `(async()=>{if(!navigator.gpu)return 'no-gpu-api';` +
-			`const a=await navigator.gpu.requestAdapter();if(!a)return 'no-adapter';` +
-			`return (a.info&&a.info.vendor)||'adapter';})()`
-		got := evalString(t, bridge, app.URL+"/", script, nil)
-		if got == "no-gpu-api" || got == "no-adapter" {
-			t.Skipf("no WebGPU adapter available (%s) - expected without a GPU desktop", got)
+		v := gpuVendor(t, bridge, app.URL+"/")
+		if v == "" {
+			t.Skip("no WebGPU adapter available - expected without a GPU")
 		}
-		t.Logf("WebGPU adapter: %s", got)
+		t.Logf("WebGPU adapter vendor: %s (hardware=%v)", v, !softwareGPU(v))
 	})
 }
