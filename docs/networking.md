@@ -73,8 +73,7 @@ Both machines join the same tailnet. Bridge binds the tailscale interface; calle
 ### GPU host (Windows)
 
 1. Install [Tailscale for Windows](https://tailscale.com/download/windows), join the tailnet.
-2. Set the bind address in the run-as user's environment and restart the logon task
-   (the task inherits the user environment at launch; other paths use their defaults):
+2. Set the bind address in the run-as user's environment and restart the logon task (the task inherits the user environment at launch; other paths use their defaults):
 
 ```powershell
 [Environment]::SetEnvironmentVariable("BRIDGE_BIND_ADDR", "<tailscale-ip>:51234", "User")

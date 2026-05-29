@@ -1,28 +1,17 @@
 # Windows install notes
 
-## Elevation
+## No elevation needed
 
-**`install.ps1` needs no administrator rights.** It installs everything under your user
-profile (`%LocalAppData%\gpu-browser-bridge`) and registers a per-user logon Scheduled
-Task, all of which a standard user can do. The bridge then runs **non-elevated** in your
-interactive desktop session (that is what gives Chrome a real GPU).
+`install.ps1` and `uninstall.ps1` run as a normal user. Everything installs under your user profile (`%LocalAppData%\gpu-browser-bridge`) and the logon Scheduled Task is registered for the current user — none of which needs administrator rights. The bridge then runs in your interactive desktop session, which is what gives Chrome a real GPU.
 
-The only thing that needs an elevated PowerShell is cleaning up a **legacy** admin/service
-install (a Session-0 service or an admin-created task from an older version): a non-elevated
-process cannot remove an admin-created task. `uninstall.ps1` does the normal per-user
-removal unelevated and attempts the legacy bits best-effort, telling you if elevation is
-needed.
+`go build` and running `bridge.exe` in the foreground for development also need no elevation.
 
 ## Prerequisites
 
-- [Google Chrome](https://www.google.com/chrome/) installed at one of the standard
-  `Program Files` locations.
-- Go 1.26+ if building from source (otherwise pass `-SkipBuild` and drop a prebuilt
-  `bridge.exe` in the repo root).
+- [Google Chrome](https://www.google.com/chrome/) installed at one of the standard `Program Files` locations.
+- Go 1.26+ if building from source (otherwise pass `-SkipBuild` and drop a prebuilt `bridge.exe` in the repo root).
 
-No service wrapper (NSSM/sc.exe) is needed — a Windows service runs in Session 0, which
-has no GPU desktop and hangs on WebGPU. The bridge runs as an interactive logon task
-instead. See [../docs/fix-session0-gpu-hang.md](../docs/fix-session0-gpu-hang.md).
+No service wrapper is needed: a Windows service runs in Session 0, which has no GPU desktop and hangs on WebGPU, so the bridge runs as an interactive logon task instead.
 
 ## Install
 
@@ -33,20 +22,31 @@ cd C:\path\to\gpu-browser-bridge
 .\windows\install.ps1
 ```
 
-The script builds `bridge.exe` (GUI subsystem, so no console window), installs it and the
-token under `%LocalAppData%\gpu-browser-bridge\`, registers a logon Scheduled Task called
-`gpu-browser-bridge` that runs the bridge non-elevated in your session, and starts it.
-Chrome runs in new headless mode (no window), so the whole thing is invisible on the desktop.
+The script builds `bridge.exe` (GUI subsystem, so no console window), installs it and the token under `%LocalAppData%\gpu-browser-bridge\`, registers a logon Scheduled Task called `gpu-browser-bridge` that runs the bridge in your session, and starts it. Chrome runs in new headless mode (no window), so the whole thing is invisible on the desktop.
 
-A logon task only runs once you are logged on; for unattended reboots enable auto-logon
-(see the fix doc above).
+At the end it prints the headless-host setup snippet (SSH tunnel + CLI config). Copy that to the caller machine.
 
-At the end it prints the headless-host setup snippet (SSH tunnel + CLI config). Copy that
-to the caller machine.
+## Auto-logon (unattended reboots)
 
-> **Upgrading from an older admin/service install?** Run `.\windows\uninstall.ps1` once in
-> an elevated PowerShell to clear the old admin-created task/service, then run
-> `install.ps1` normally (no admin).
+A logon task only runs once a user is logged on. For a headless GPU host that reboots unattended, enable auto-logon so a desktop session — and the bridge — come back on their own.
+
+Recommended: [Sysinternals Autologon](https://learn.microsoft.com/sysinternals/downloads/autologon), which stores the password as an encrypted LSA secret rather than plaintext:
+
+```powershell
+.\Autologon.exe "<user>" $env:COMPUTERNAME "<password>" /accepteula
+```
+
+Fallback (registry) — WARNING: this writes the password in cleartext to the registry; only acceptable on a locked-down host you control:
+
+```powershell
+$wl = "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon"
+Set-ItemProperty $wl AutoAdminLogon "1"
+Set-ItemProperty $wl DefaultUserName "<user>"
+Set-ItemProperty $wl DefaultDomainName $env:COMPUTERNAME
+Set-ItemProperty $wl DefaultPassword "<password>"
+```
+
+After enabling it, reboot and confirm the bridge comes back in Session >= 1 (`Get-Process bridge | Select-Object SessionId`).
 
 ## Verify
 
@@ -67,8 +67,7 @@ If `chrome_alive` is `false`, check `%LocalAppData%\gpu-browser-bridge\bridge.lo
 
 ## Token rotation
 
-The token lives in your profile, so no ACL juggling is needed — regenerate and restart the
-task:
+The token lives in your profile, so no ACL juggling is needed — regenerate and restart the task:
 
 ```powershell
 $tok = "$env:LocalAppData\gpu-browser-bridge\token"

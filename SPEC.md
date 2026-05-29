@@ -59,7 +59,7 @@ This proves networking + CDP + WebGPU. If it works, build v1. If it doesn't, the
 
 ### v1 — The actual service
 
-A small Go HTTP server (`bridge.exe`) wrapping Chrome + a CDP driver, run as an interactive-session logon Scheduled Task (NOT a Windows service — a service runs in Session 0 with no GPU desktop and hangs on WebGPU; see docs/fix-session0-gpu-hang.md).
+A small Go HTTP server (`bridge.exe`) wrapping Chrome + a CDP driver, run as an interactive-session logon Scheduled Task (NOT a Windows service — a service runs in Session 0 with no GPU desktop and hangs on WebGPU).
 
 #### Endpoints
 
