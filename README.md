@@ -67,10 +67,12 @@ All POST endpoints require `Authorization: Bearer <token>`. `GET /healthz` is un
 | Method | Path | Body | Returns |
 |--------|------|------|---------|
 | `GET`  | `/healthz` | — | `{ok, chrome_alive, uptime_s}` |
-| `POST` | `/screenshot` | `{url, viewport_w?, viewport_h?, wait_for?, full_page?, ignore_https_errors?, settle_ms?, timeout_ms?}` | `{png_b64, console[], failed_requests[]}` |
-| `POST` | `/eval` | `{url, script, wait_for?, ignore_https_errors?, settle_ms?, timeout_ms?}` | `{result, console[], failed_requests[]}` |
+| `POST` | `/screenshot` | `{url, viewport_w?, viewport_h?, wait_for?, full_page?, ignore_https_errors?, settle_ms?, timeout_ms?, cookies?, headers?, local_storage?}` | `{png_b64, console[], failed_requests[]}` |
+| `POST` | `/eval` | `{url, script, wait_for?, ignore_https_errors?, settle_ms?, timeout_ms?, cookies?, headers?, local_storage?}` | `{result, console[], failed_requests[]}` |
 
 `script` runs in page context after navigation + optional wait; the final expression's value is returned. Promises are awaited.
+
+`cookies`, `headers`, and `local_storage` are optional session material applied before navigation, so you can capture pages behind a login. `headers` is a `{name: value}` map sent with every request (e.g. `{"Authorization": "Bearer ..."}`); `cookies` is an array of `{name, value, url?|domain?, path?, secure?, http_only?, same_site?}` (give `url` and Chrome infers the rest); `local_storage` is a `{key: value}` map seeded into the target origin before its own scripts run. On the CLI these are `--header "K: V"`, `--cookie name=value`, and `--local-storage k=v` (each repeatable).
 
 ## Install
 

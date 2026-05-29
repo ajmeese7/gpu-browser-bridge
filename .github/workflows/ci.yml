@@ -31,3 +31,25 @@ jobs:
 
       - name: Vet
         run: go vet ./...
+
+  e2e:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.26"
+
+      - uses: browser-actions/setup-chrome@v1
+        id: chrome
+        with:
+          chrome-version: stable
+
+      # Headless E2E: drives the real bridge + Chrome over HTTP against local
+      # pages, covering screenshot capture, eval, and cookie/header/localStorage
+      # injection. The WebGPU-adapter check skips here (CI runners have no GPU).
+      - name: E2E
+        env:
+          BRIDGE_CHROME_PATH: ${{ steps.chrome.outputs.chrome-path }}
+        run: go test -tags e2e -v -timeout 180s ./internal/e2e

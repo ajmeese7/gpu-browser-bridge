@@ -3,8 +3,8 @@
 // Usage:
 //
 //	gpu-browser healthz
-//	gpu-browser screenshot URL [--out FILE] [--full] [--wait-for SELECTOR] [--viewport WxH] [--ignore-https]
-//	gpu-browser eval URL SCRIPT [--wait-for SELECTOR] [--ignore-https]
+//	gpu-browser screenshot URL [--out FILE] [--full] [--wait-for SELECTOR] [--viewport WxH] [--ignore-https] [--header "K: V"] [--cookie name=value] [--local-storage k=v]
+//	gpu-browser eval URL SCRIPT [--wait-for SELECTOR] [--ignore-https] [--header "K: V"] [--cookie name=value] [--local-storage k=v]
 //
 // Configuration is via environment variables:
 //
@@ -119,11 +119,17 @@ screenshot flags:
   --viewport WxH                  e.g. 1440x900
   --ignore-https                  accept invalid certs
   --settle MS                     extra wait after load (ms)
+  --header "Key: Value"           add an HTTP header, e.g. Authorization (repeatable)
+  --cookie "name=value"           set a cookie for the target URL (repeatable)
+  --local-storage "key=value"     seed localStorage for the target origin (repeatable)
 
 eval flags:
   --wait-for SELECTOR             wait for CSS selector before script
   --ignore-https                  accept invalid certs
   --settle MS                     extra wait after load (ms)
+  --header "Key: Value"           add an HTTP header, e.g. Authorization (repeatable)
+  --cookie "name=value"           set a cookie for the target URL (repeatable)
+  --local-storage "key=value"     seed localStorage for the target origin (repeatable)
 
 env:
   BRIDGE_URL                      default http://localhost:51234
@@ -143,6 +149,62 @@ func runHealthz() {
 	_, _ = io.Copy(os.Stdout, resp.Body)
 	if resp.StatusCode != http.StatusOK {
 		os.Exit(1)
+	}
+}
+
+// repeatedFlag collects a string flag that may be given multiple times.
+type repeatedFlag []string
+
+func (r *repeatedFlag) String() string { return strings.Join(*r, ", ") }
+func (r *repeatedFlag) Set(v string) error {
+	*r = append(*r, v)
+	return nil
+}
+
+// sessionFlags registers the session-injection flags shared by screenshot/eval.
+func sessionFlags(fs *flag.FlagSet) (headers, cookies, localStorage *repeatedFlag) {
+	headers, cookies, localStorage = &repeatedFlag{}, &repeatedFlag{}, &repeatedFlag{}
+	fs.Var(headers, "header", "")
+	fs.Var(cookies, "cookie", "")
+	fs.Var(localStorage, "local-storage", "")
+	return
+}
+
+// applySession folds --header/--cookie/--local-storage into the request body.
+// Cookies default their URL to targetURL so Chrome infers domain/path/secure.
+func applySession(body map[string]any, headers, cookies, localStorage *repeatedFlag, targetURL string) {
+	if len(*headers) > 0 {
+		h := map[string]string{}
+		for _, kv := range *headers {
+			k, v, ok := strings.Cut(kv, ":")
+			if !ok {
+				fatal("--header must be 'Key: Value' (got %q)", kv)
+			}
+			h[strings.TrimSpace(k)] = strings.TrimSpace(v)
+		}
+		body["headers"] = h
+	}
+	if len(*cookies) > 0 {
+		cs := make([]map[string]any, 0, len(*cookies))
+		for _, kv := range *cookies {
+			k, v, ok := strings.Cut(kv, "=")
+			if !ok {
+				fatal("--cookie must be 'name=value' (got %q)", kv)
+			}
+			cs = append(cs, map[string]any{"name": strings.TrimSpace(k), "value": v, "url": targetURL})
+		}
+		body["cookies"] = cs
+	}
+	if len(*localStorage) > 0 {
+		m := map[string]string{}
+		for _, kv := range *localStorage {
+			k, v, ok := strings.Cut(kv, "=")
+			if !ok {
+				fatal("--local-storage must be 'key=value' (got %q)", kv)
+			}
+			m[strings.TrimSpace(k)] = v
+		}
+		body["local_storage"] = m
 	}
 }
 
@@ -176,6 +238,7 @@ func runScreenshot(args []string) {
 	viewport := fs.String("viewport", "", "")
 	ignoreHTTPS := fs.Bool("ignore-https", false, "")
 	settle := fs.Int("settle", 0, "")
+	headers, cookies, localStorage := sessionFlags(fs)
 	pos := parseInterspersed(fs, args)
 	if len(pos) < 1 {
 		fatal("screenshot requires a URL")
@@ -200,6 +263,7 @@ func runScreenshot(args []string) {
 		body["viewport_w"] = w
 		body["viewport_h"] = h
 	}
+	applySession(body, headers, cookies, localStorage, pos[0])
 
 	var result struct {
 		PNG            string          `json:"png_b64"`
@@ -229,6 +293,7 @@ func runEval(args []string) {
 	waitFor := fs.String("wait-for", "", "")
 	ignoreHTTPS := fs.Bool("ignore-https", false, "")
 	settle := fs.Int("settle", 0, "")
+	headers, cookies, localStorage := sessionFlags(fs)
 	pos := parseInterspersed(fs, args)
 	if len(pos) < 2 {
 		fatal("eval requires a URL and a JS script")
@@ -245,6 +310,7 @@ func runEval(args []string) {
 	if *settle > 0 {
 		body["settle_ms"] = *settle
 	}
+	applySession(body, headers, cookies, localStorage, pos[0])
 
 	var result json.RawMessage
 	if err := postJSON("/eval", body, &result); err != nil {

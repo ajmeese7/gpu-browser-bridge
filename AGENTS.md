@@ -20,7 +20,8 @@ HTTP API wrapping a GPU-backed Chrome on Windows, so headless callers (CI, codin
 ```bash
 go build -ldflags "-H=windowsgui" -o bridge.exe ./cmd/bridge   # GUI subsystem: no console window (logs go to a file)
 GOOS=linux GOARCH=amd64 go build -o gpu-browser ./cmd/gpu-browser
-go test ./...
+go test ./...                       # unit tests (no Chrome needed)
+go test -tags e2e ./internal/e2e    # end-to-end vs a real Chrome; run on the GPU host for the WebGPU-adapter check (CI runs it headless and skips that check)
 ```
 
 ## Architecture
@@ -82,6 +83,8 @@ Key design decisions:
 - If Chrome dies between requests, `newTab()` detects `browserCtx.Err() != nil` and relaunches.
 
 Console and network listeners (`listeners.go`) capture `runtime.EventConsoleAPICalled`, `runtime.EventExceptionThrown`, `network.EventResponseReceived` (>= 400), and `network.EventLoadingFailed`.
+
+`SessionContext` (embedded in both `ScreenshotRequest` and `EvalRequest`, so its fields are top-level JSON) applies optional `cookies`/`headers`/`local_storage` for capturing authenticated pages. Its `preNavigateActions()` run after `network.Enable()` and before `Navigate`: headers via `Network.setExtraHTTPHeaders`, cookies via `Network.setCookies`, and localStorage seeded with `Page.addScriptToEvaluateOnNewDocument` (so it is set in the target origin before page scripts run).
 
 ### internal/server
 
