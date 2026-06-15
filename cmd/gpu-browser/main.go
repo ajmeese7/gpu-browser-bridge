@@ -3,7 +3,7 @@
 // Usage:
 //
 //	gpu-browser healthz
-//	gpu-browser screenshot URL [--out FILE] [--full] [--wait-for SELECTOR] [--viewport WxH] [--ignore-https] [--header "K: V"] [--cookie name=value] [--local-storage k=v]
+//	gpu-browser screenshot URL [--out FILE] [--full] [--script JS | --script-file PATH] [--wait-for SELECTOR] [--viewport WxH] [--ignore-https] [--header "K: V"] [--cookie name=value] [--local-storage k=v]
 //	gpu-browser eval URL SCRIPT [--wait-for SELECTOR] [--ignore-https] [--header "K: V"] [--cookie name=value] [--local-storage k=v]
 //
 // Configuration is via environment variables:
@@ -115,6 +115,8 @@ commands:
 screenshot flags:
   --out FILE                      write PNG here (default: stdout)
   --full                          full-page screenshot
+  --script JS                     run JS on the page after load, before capture
+  --script-file PATH              read the pre-capture JS from a file (vs --script)
   --wait-for SELECTOR             wait for CSS selector before capture
   --viewport WxH                  e.g. 1440x900
   --ignore-https                  accept invalid certs
@@ -208,6 +210,23 @@ func applySession(body map[string]any, headers, cookies, localStorage *repeatedF
 	}
 }
 
+// readScript resolves the screenshot pre-script from --script (inline) or
+// --script-file (path). The file form avoids shell-quoting pain for multi-line
+// scripts. The two are mutually exclusive; supplying neither yields "".
+func readScript(inline, file string) string {
+	if inline != "" && file != "" {
+		fatal("--script and --script-file are mutually exclusive")
+	}
+	if file != "" {
+		b, err := os.ReadFile(file)
+		if err != nil {
+			fatal("read --script-file %s: %v", file, err)
+		}
+		return string(b)
+	}
+	return inline
+}
+
 // parseInterspersed parses flags that may appear before, after, or
 // between positional arguments. Go's flag package stops at the first
 // non-flag token, so a command like `screenshot URL --ignore-https`
@@ -238,6 +257,8 @@ func runScreenshot(args []string) {
 	viewport := fs.String("viewport", "", "")
 	ignoreHTTPS := fs.Bool("ignore-https", false, "")
 	settle := fs.Int("settle", 0, "")
+	script := fs.String("script", "", "")
+	scriptFile := fs.String("script-file", "", "")
 	headers, cookies, localStorage := sessionFlags(fs)
 	pos := parseInterspersed(fs, args)
 	if len(pos) < 1 {
@@ -248,6 +269,9 @@ func runScreenshot(args []string) {
 		"url":                 pos[0],
 		"full_page":           *full,
 		"ignore_https_errors": *ignoreHTTPS,
+	}
+	if s := readScript(*script, *scriptFile); s != "" {
+		body["script"] = s
 	}
 	if *waitFor != "" {
 		body["wait_for"] = *waitFor

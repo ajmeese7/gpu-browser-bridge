@@ -74,11 +74,34 @@ func findChrome(t *testing.T) string {
 // HTTP handler, returning its base URL.
 func startBridge(t *testing.T) string {
 	t.Helper()
+	// Manage the profile dir ourselves rather than via t.TempDir(): its
+	// automatic RemoveAll fires the instant Shutdown() returns, but Shutdown
+	// only cancels the chromedp contexts and Chrome releases its Default/
+	// profile files asynchronously, so the removal can race the exiting process
+	// ("directory not empty"). We register a retrying cleanup instead.
+	userDataDir, err := os.MkdirTemp("", "gpu-bridge-e2e-")
+	if err != nil {
+		t.Fatalf("temp profile dir: %v", err)
+	}
+	// Cleanups run LIFO; registering removal before Shutdown means it runs
+	// after, i.e. once Chrome has been told to exit. Retry to give the process
+	// time to release the profile files.
+	t.Cleanup(func() {
+		var rmErr error
+		for range 30 {
+			if rmErr = os.RemoveAll(userDataDir); rmErr == nil {
+				return
+			}
+			time.Sleep(100 * time.Millisecond)
+		}
+		t.Logf("profile dir %s not removed: %v", userDataDir, rmErr)
+	})
+
 	cfg := &config.Config{
 		BindAddr:    "127.0.0.1:51234", // unused: we serve via httptest
 		Token:       token,
 		ChromePath:  findChrome(t),
-		UserDataDir: t.TempDir(),
+		UserDataDir: userDataDir,
 		LogPath:     filepath.Join(t.TempDir(), "e2e.log"),
 	}
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
@@ -119,6 +142,16 @@ func appServer(t *testing.T) *httptest.Server {
 			`<div id="x" style="width:100vw;height:100vh;background:#fff"></div>`+
 			`<script>requestAnimationFrame(()=>requestAnimationFrame(()=>{`+
 			`document.getElementById('x').style.background='rgb(0,128,255)';}));</script></body></html>`)
+	})
+	mux.HandleFunc("/interact", func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/html")
+		// White until an in-page interaction fires: a custom event flips the
+		// background to blue. A fresh navigation always shows white, so a blue
+		// capture proves the pre-capture --script ran against the live page.
+		fmt.Fprint(w, `<!doctype html><html><body style="margin:0">`+
+			`<div id="x" style="width:100vw;height:100vh;background:#fff"></div>`+
+			`<script>window.addEventListener('flip',()=>{`+
+			`document.getElementById('x').style.background='rgb(0,128,255)';});</script></body></html>`)
 	})
 	ts := httptest.NewServer(mux)
 	t.Cleanup(ts.Close)
@@ -263,6 +296,32 @@ func TestE2E(t *testing.T) {
 		r8, g8, b8 := r>>8, g>>8, bl>>8
 		if b8 < 200 || r8 > 60 || g8 < 90 || g8 > 170 {
 			t.Fatalf("rAF-painted pixel rgb(%d,%d,%d) not ~rgb(0,128,255) - tab not foregrounded?", r8, g8, b8)
+		}
+	})
+
+	t.Run("screenshot_runs_prescript", func(t *testing.T) {
+		if v := gpuVendor(t, bridge, app.URL+"/"); softwareGPU(v) {
+			t.Skipf("no hardware GPU (adapter %q); Page.captureScreenshot needs a GPU compositor", v)
+		}
+		// /interact is white until the 'flip' event fires. The pre-script
+		// dispatches it, so a blue center pixel proves the script ran on the
+		// live page before capture (a no-script capture would be white).
+		res := post(t, bridge, "/screenshot", map[string]any{
+			"url": app.URL + "/interact", "viewport_w": 160, "viewport_h": 160,
+			"script": "window.dispatchEvent(new Event('flip'))", "settle_ms": 500, "timeout_ms": 30000,
+		})
+		var b64 string
+		json.Unmarshal(res["png_b64"], &b64)
+		raw, _ := base64.StdEncoding.DecodeString(b64)
+		img, _, err := image.Decode(bytes.NewReader(raw))
+		if err != nil {
+			t.Fatalf("decode png: %v", err)
+		}
+		b := img.Bounds()
+		r, g, bl, _ := img.At(b.Dx()/2, b.Dy()/2).RGBA()
+		r8, g8, b8 := r>>8, g>>8, bl>>8
+		if b8 < 200 || r8 > 60 || g8 < 90 || g8 > 170 {
+			t.Fatalf("post-script pixel rgb(%d,%d,%d) not ~rgb(0,128,255) - pre-script did not run?", r8, g8, b8)
 		}
 	})
 

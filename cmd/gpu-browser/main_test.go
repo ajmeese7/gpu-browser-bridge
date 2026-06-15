@@ -2,8 +2,30 @@ package main
 
 import (
 	"flag"
+	"os"
+	"path/filepath"
 	"testing"
 )
+
+// readScript resolves inline JS, file JS, or neither; the inline and file forms
+// are mutually exclusive (that case calls fatal/os.Exit, so it is not exercised
+// here).
+func TestReadScript(t *testing.T) {
+	if got := readScript("", ""); got != "" {
+		t.Errorf("neither: got %q, want empty", got)
+	}
+	if got := readScript("doThing()", ""); got != "doThing()" {
+		t.Errorf("inline: got %q", got)
+	}
+
+	path := filepath.Join(t.TempDir(), "s.js")
+	if err := os.WriteFile(path, []byte("await boot()\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if got := readScript("", path); got != "await boot()\n" {
+		t.Errorf("file: got %q", got)
+	}
+}
 
 // flags after a positional arg must still be parsed — the original bug
 // was Go's flag package stopping at the first non-flag token, so
