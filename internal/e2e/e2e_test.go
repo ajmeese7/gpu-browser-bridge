@@ -143,6 +143,17 @@ func appServer(t *testing.T) *httptest.Server {
 			`<script>requestAnimationFrame(()=>requestAnimationFrame(()=>{`+
 			`document.getElementById('x').style.background='rgb(0,128,255)';}));</script></body></html>`)
 	})
+	mux.HandleFunc("/click", func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/html")
+		// Records the coordinates of a real click on a full-viewport pad. A
+		// synthetic JS event would not fire the pad's listener via the browser's
+		// hit-testing, so reading back the coords proves a real pointer pick landed.
+		fmt.Fprint(w, `<!doctype html><html><body style="margin:0">`+
+			`<div id="pad" style="width:100vw;height:100vh"></div>`+
+			`<script>window.__click=null;document.getElementById('pad')`+
+			`.addEventListener('click',e=>{window.__click={x:e.clientX,y:e.clientY};});</script>`+
+			`</body></html>`)
+	})
 	mux.HandleFunc("/interact", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "text/html")
 		// White until an in-page interaction fires: a custom event flips the
@@ -322,6 +333,20 @@ func TestE2E(t *testing.T) {
 		r8, g8, b8 := r>>8, g>>8, bl>>8
 		if b8 < 200 || r8 > 60 || g8 < 90 || g8 > 170 {
 			t.Fatalf("post-script pixel rgb(%d,%d,%d) not ~rgb(0,128,255) - pre-script did not run?", r8, g8, b8)
+		}
+	})
+
+	t.Run("eval_real_click", func(t *testing.T) {
+		// No GPU needed: dispatch a real pointer pick, then read back the coords
+		// the page's click listener recorded. Proves Input.dispatchMouseEvent
+		// drives the actual pointer path, not a synthetic event.
+		got := evalString(t, bridge, app.URL+"/click",
+			"JSON.stringify(window.__click)", map[string]any{
+				"click":     map[string]float64{"x": 40, "y": 55},
+				"settle_ms": 200,
+			})
+		if got != `{"x":40,"y":55}` {
+			t.Fatalf("recorded click = %s, want {\"x\":40,\"y\":55}", got)
 		}
 	})
 

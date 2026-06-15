@@ -3,8 +3,8 @@
 // Usage:
 //
 //	gpu-browser healthz
-//	gpu-browser screenshot URL [--out FILE] [--full] [--script JS | --script-file PATH] [--wait-for SELECTOR] [--viewport WxH] [--ignore-https] [--header "K: V"] [--cookie name=value] [--local-storage k=v]
-//	gpu-browser eval URL SCRIPT [--wait-for SELECTOR] [--ignore-https] [--header "K: V"] [--cookie name=value] [--local-storage k=v]
+//	gpu-browser screenshot URL [--out FILE] [--full] [--script JS | --script-file PATH] [--click X,Y] [--wait-for SELECTOR] [--viewport WxH] [--ignore-https] [--header "K: V"] [--cookie name=value] [--local-storage k=v]
+//	gpu-browser eval URL SCRIPT [--click X,Y] [--wait-for SELECTOR] [--ignore-https] [--header "K: V"] [--cookie name=value] [--local-storage k=v]
 //
 // Configuration is via environment variables:
 //
@@ -117,6 +117,7 @@ screenshot flags:
   --full                          full-page screenshot
   --script JS                     run JS on the page after load, before capture
   --script-file PATH              read the pre-capture JS from a file (vs --script)
+  --click X,Y                     dispatch a real pointer pick at viewport coords
   --wait-for SELECTOR             wait for CSS selector before capture
   --viewport WxH                  e.g. 1440x900
   --ignore-https                  accept invalid certs
@@ -127,6 +128,7 @@ screenshot flags:
 
 eval flags:
   --wait-for SELECTOR             wait for CSS selector before script
+  --click X,Y                     dispatch a real pointer pick before the script
   --ignore-https                  accept invalid certs
   --settle MS                     extra wait after load (ms)
   --header "Key: Value"           add an HTTP header, e.g. Authorization (repeatable)
@@ -227,6 +229,22 @@ func readScript(inline, file string) string {
 	return inline
 }
 
+// parseClick parses a "X,Y" pair into viewport CSS coordinates for a real
+// pointer pick. Accepts integers or decimals.
+func parseClick(s string) (x, y float64, err error) {
+	xs, ys, ok := strings.Cut(s, ",")
+	if !ok {
+		return 0, 0, fmt.Errorf("click must be X,Y (got %q)", s)
+	}
+	if x, err = strconv.ParseFloat(strings.TrimSpace(xs), 64); err != nil {
+		return 0, 0, fmt.Errorf("click X: %w", err)
+	}
+	if y, err = strconv.ParseFloat(strings.TrimSpace(ys), 64); err != nil {
+		return 0, 0, fmt.Errorf("click Y: %w", err)
+	}
+	return x, y, nil
+}
+
 // parseInterspersed parses flags that may appear before, after, or
 // between positional arguments. Go's flag package stops at the first
 // non-flag token, so a command like `screenshot URL --ignore-https`
@@ -259,6 +277,7 @@ func runScreenshot(args []string) {
 	settle := fs.Int("settle", 0, "")
 	script := fs.String("script", "", "")
 	scriptFile := fs.String("script-file", "", "")
+	click := fs.String("click", "", "")
 	headers, cookies, localStorage := sessionFlags(fs)
 	pos := parseInterspersed(fs, args)
 	if len(pos) < 1 {
@@ -272,6 +291,13 @@ func runScreenshot(args []string) {
 	}
 	if s := readScript(*script, *scriptFile); s != "" {
 		body["script"] = s
+	}
+	if *click != "" {
+		x, y, err := parseClick(*click)
+		if err != nil {
+			fatal("%v", err)
+		}
+		body["click"] = map[string]float64{"x": x, "y": y}
 	}
 	if *waitFor != "" {
 		body["wait_for"] = *waitFor
@@ -317,6 +343,7 @@ func runEval(args []string) {
 	waitFor := fs.String("wait-for", "", "")
 	ignoreHTTPS := fs.Bool("ignore-https", false, "")
 	settle := fs.Int("settle", 0, "")
+	click := fs.String("click", "", "")
 	headers, cookies, localStorage := sessionFlags(fs)
 	pos := parseInterspersed(fs, args)
 	if len(pos) < 2 {
@@ -330,6 +357,13 @@ func runEval(args []string) {
 	}
 	if *waitFor != "" {
 		body["wait_for"] = *waitFor
+	}
+	if *click != "" {
+		x, y, err := parseClick(*click)
+		if err != nil {
+			fatal("%v", err)
+		}
+		body["click"] = map[string]float64{"x": x, "y": y}
 	}
 	if *settle > 0 {
 		body["settle_ms"] = *settle

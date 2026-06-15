@@ -27,6 +27,38 @@ func TestReadScript(t *testing.T) {
 	}
 }
 
+func TestParseClick(t *testing.T) {
+	cases := []struct {
+		in      string
+		x, y    float64
+		wantErr bool
+	}{
+		{in: "100,200", x: 100, y: 200},
+		{in: " 40 , 55 ", x: 40, y: 55},
+		{in: "12.5,7.25", x: 12.5, y: 7.25},
+		{in: "100", wantErr: true},
+		{in: "a,2", wantErr: true},
+		{in: "1,b", wantErr: true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.in, func(t *testing.T) {
+			x, y, err := parseClick(tc.in)
+			if tc.wantErr {
+				if err == nil {
+					t.Fatalf("parseClick(%q) = (%v,%v), want error", tc.in, x, y)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("parseClick(%q): %v", tc.in, err)
+			}
+			if x != tc.x || y != tc.y {
+				t.Errorf("parseClick(%q) = (%v,%v), want (%v,%v)", tc.in, x, y, tc.x, tc.y)
+			}
+		})
+	}
+}
+
 // flags after a positional arg must still be parsed — the original bug
 // was Go's flag package stopping at the first non-flag token, so
 // `screenshot URL --ignore-https` silently dropped --ignore-https.
