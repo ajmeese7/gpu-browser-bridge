@@ -214,6 +214,18 @@ type SessionContext struct {
 	LocalStorage map[string]string `json:"local_storage,omitempty"`
 }
 
+// ClickPoint is an optional real pointer pick: a mousePressed + mouseReleased
+// pair dispatched at the given viewport CSS coordinates (Input.dispatchMouseEvent
+// via chromedp.MouseClickXY). Unlike a synthetic click event built in JS, this
+// drives the page's actual pointer path - hit-testing, capture, drag thresholds
+// - which is what canvas pickers (Babylon, WebGPU) react to. It is applied on
+// the foregrounded tab after any script and before the result is observed
+// (screenshot capture or eval return).
+type ClickPoint struct {
+	X float64 `json:"x"`
+	Y float64 `json:"y"`
+}
+
 // Cookie mirrors the subset of CDP CookieParam we expose. Provide either URL
 // (Chrome infers domain/path/secure from it) or an explicit Domain.
 type Cookie struct {
@@ -306,14 +318,17 @@ type ScreenshotRequest struct {
 	// This is how an interaction-driven view ("expand a node, then look") is
 	// captured: the script performs the interaction in-page, then the same
 	// live tab is screenshotted. The script's return value is discarded.
-	Script       string `json:"script,omitempty"`
-	WaitFor      string `json:"wait_for,omitempty"` // CSS selector to wait for
-	FullPage     bool   `json:"full_page,omitempty"`
-	ViewportW    int    `json:"viewport_w,omitempty"`
-	ViewportH    int    `json:"viewport_h,omitempty"`
-	TimeoutMS    int    `json:"timeout_ms,omitempty"`
-	IgnoreHTTPS  bool   `json:"ignore_https_errors,omitempty"`
-	SettleMillis int    `json:"settle_ms,omitempty"` // extra wait after load
+	Script string `json:"script,omitempty"`
+	// Click, if set, is a real pointer pick dispatched after Script and before
+	// WaitFor/Settle/capture.
+	Click        *ClickPoint `json:"click,omitempty"`
+	WaitFor      string      `json:"wait_for,omitempty"` // CSS selector to wait for
+	FullPage     bool        `json:"full_page,omitempty"`
+	ViewportW    int         `json:"viewport_w,omitempty"`
+	ViewportH    int         `json:"viewport_h,omitempty"`
+	TimeoutMS    int         `json:"timeout_ms,omitempty"`
+	IgnoreHTTPS  bool        `json:"ignore_https_errors,omitempty"`
+	SettleMillis int         `json:"settle_ms,omitempty"` // extra wait after load
 	SessionContext
 }
 
@@ -370,6 +385,11 @@ func (b *Browser) Screenshot(ctx context.Context, req ScreenshotRequest) (*Scree
 		var discard json.RawMessage
 		actions = append(actions, chromedp.Evaluate(req.Script, &discard, evalAwait))
 	}
+	// Optional real pointer pick, after the script set up state and before
+	// WaitFor/Settle so those observe the post-click result.
+	if req.Click != nil {
+		actions = append(actions, chromedp.MouseClickXY(req.Click.X, req.Click.Y))
+	}
 	if req.WaitFor != "" {
 		actions = append(actions, chromedp.WaitVisible(req.WaitFor))
 	}
@@ -395,12 +415,15 @@ func (b *Browser) Screenshot(ctx context.Context, req ScreenshotRequest) (*Scree
 
 // EvalRequest is the JSON body for /eval.
 type EvalRequest struct {
-	URL          string `json:"url"`
-	Script       string `json:"script"`             // JS expression; last expression value is returned
-	WaitFor      string `json:"wait_for,omitempty"` // CSS selector before running script
-	TimeoutMS    int    `json:"timeout_ms,omitempty"`
-	IgnoreHTTPS  bool   `json:"ignore_https_errors,omitempty"`
-	SettleMillis int    `json:"settle_ms,omitempty"`
+	URL     string `json:"url"`
+	Script  string `json:"script"`             // JS expression; last expression value is returned
+	WaitFor string `json:"wait_for,omitempty"` // CSS selector before running script
+	// Click, if set, is a real pointer pick dispatched after WaitFor and before
+	// Settle/Script, so Script can read the post-click state.
+	Click        *ClickPoint `json:"click,omitempty"`
+	TimeoutMS    int         `json:"timeout_ms,omitempty"`
+	IgnoreHTTPS  bool        `json:"ignore_https_errors,omitempty"`
+	SettleMillis int         `json:"settle_ms,omitempty"`
 	SessionContext
 }
 
@@ -446,6 +469,11 @@ func (b *Browser) Eval(ctx context.Context, req EvalRequest) (*EvalResult, error
 	}))
 	if req.WaitFor != "" {
 		actions = append(actions, chromedp.WaitVisible(req.WaitFor))
+	}
+	// Optional real pointer pick before Settle/Script, so the script observes
+	// the post-click state.
+	if req.Click != nil {
+		actions = append(actions, chromedp.MouseClickXY(req.Click.X, req.Click.Y))
 	}
 	if req.SettleMillis > 0 {
 		actions = append(actions, chromedp.Sleep(time.Duration(req.SettleMillis)*time.Millisecond))

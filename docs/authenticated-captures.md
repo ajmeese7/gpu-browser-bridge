@@ -98,6 +98,24 @@ HTTP body:
 
 `/eval` also foregrounds its tab, so a `script` there can drive `requestAnimationFrame` work and read back the result - use `/eval` when you want the JSON value, `/screenshot --script` when you want the image.
 
+### Clicking instead of (or before) scripting
+
+When the interaction is a click on a canvas - a Babylon/WebGPU picker that only responds to a real pointer event, not a synthetic JS one - use `--click X,Y` (viewport CSS pixels). It dispatches a real `mousePressed` + `mouseReleased` pair, so the page's actual hit-testing runs:
+
+```bash
+gpu-browser screenshot "<app-url>/projects/<id>/graph" \
+  --ignore-https --cookie "session=<value>" \
+  --click 720,450 --settle 5000 --out after.png
+```
+
+On `/screenshot` the click fires after `--script` (so a script can set up state first) and before capture. On `/eval` it fires before the script, so the script can read back what the click changed:
+
+```bash
+gpu-browser eval "<app-url>/projects/<id>/graph" \
+  "window.__selectedNodeId" --ignore-https --cookie "session=<value>" \
+  --click 720,450 --settle 1000
+```
+
 ## Notes
 
 - The bridge brings each per-request tab to the foreground before capturing, so apps that paint via `requestAnimationFrame` (React, Babylon, ...) render rather than hanging.
