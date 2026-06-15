@@ -299,7 +299,14 @@ func localStorageScript(items map[string]string) string {
 
 // ScreenshotRequest is the JSON body for /screenshot.
 type ScreenshotRequest struct {
-	URL          string `json:"url"`
+	URL string `json:"url"`
+	// Script, if set, is JS run against the live page after navigation (and
+	// after the tab is foregrounded, so requestAnimationFrame is active) but
+	// before WaitFor/Settle/capture. It may be async; its Promise is awaited.
+	// This is how an interaction-driven view ("expand a node, then look") is
+	// captured: the script performs the interaction in-page, then the same
+	// live tab is screenshotted. The script's return value is discarded.
+	Script       string `json:"script,omitempty"`
 	WaitFor      string `json:"wait_for,omitempty"` // CSS selector to wait for
 	FullPage     bool   `json:"full_page,omitempty"`
 	ViewportW    int    `json:"viewport_w,omitempty"`
@@ -355,6 +362,14 @@ func (b *Browser) Screenshot(ctx context.Context, req ScreenshotRequest) (*Scree
 	actions = append(actions, chromedp.ActionFunc(func(ctx context.Context) error {
 		return page.BringToFront().Do(ctx)
 	}))
+	// Optional in-page interaction, run on the foregrounded tab so its rAF is
+	// live, before WaitFor/Settle so those observe the post-interaction state.
+	// The return value is discarded; console/network listeners still capture
+	// anything the script logs or fetches.
+	if req.Script != "" {
+		var discard json.RawMessage
+		actions = append(actions, chromedp.Evaluate(req.Script, &discard, evalAwait))
+	}
 	if req.WaitFor != "" {
 		actions = append(actions, chromedp.WaitVisible(req.WaitFor))
 	}
@@ -422,6 +437,13 @@ func (b *Browser) Eval(ctx context.Context, req EvalRequest) (*EvalResult, error
 	}
 	actions = append(actions, req.preNavigateActions()...)
 	actions = append(actions, chromedp.Navigate(req.URL))
+	// Foreground the per-request tab so its requestAnimationFrame runs: headless
+	// Chrome pauses rAF in background tabs (the anchor tab otherwise holds the
+	// foreground), which would make rAF-driven scripts observe ~1 frame over the
+	// whole timeout. Mirrors the screenshot path's bringToFront.
+	actions = append(actions, chromedp.ActionFunc(func(ctx context.Context) error {
+		return page.BringToFront().Do(ctx)
+	}))
 	if req.WaitFor != "" {
 		actions = append(actions, chromedp.WaitVisible(req.WaitFor))
 	}

@@ -67,10 +67,12 @@ All POST endpoints require `Authorization: Bearer <token>`. `GET /healthz` is un
 | Method | Path | Body | Returns |
 |--------|------|------|---------|
 | `GET`  | `/healthz` | — | `{ok, chrome_alive, uptime_s}` |
-| `POST` | `/screenshot` | `{url, viewport_w?, viewport_h?, wait_for?, full_page?, ignore_https_errors?, settle_ms?, timeout_ms?, cookies?, headers?, local_storage?}` | `{png_b64, console[], failed_requests[]}` |
+| `POST` | `/screenshot` | `{url, script?, viewport_w?, viewport_h?, wait_for?, full_page?, ignore_https_errors?, settle_ms?, timeout_ms?, cookies?, headers?, local_storage?}` | `{png_b64, console[], failed_requests[]}` |
 | `POST` | `/eval` | `{url, script, wait_for?, ignore_https_errors?, settle_ms?, timeout_ms?, cookies?, headers?, local_storage?}` | `{result, console[], failed_requests[]}` |
 
-`script` runs in page context after navigation + optional wait; the final expression's value is returned. Promises are awaited.
+`script` on `/eval` runs in page context after navigation + optional wait; the final expression's value is returned. Promises are awaited.
+
+`script` on `/screenshot` is a pre-capture interaction: it runs against the live page after navigation (with the tab foregrounded, so `requestAnimationFrame` is active) and before `wait_for`/`settle_ms`/capture, then the same page is screenshotted. Its return value is discarded. This captures views that only exist after a client-side interaction (an expanded node, an applied filter) which a fresh navigation cannot reach. On the CLI it is `--script JS` or `--script-file PATH` (the file form avoids shell-quoting multi-line scripts). Promises are awaited, so the script can `await` the app's readiness before acting. See [docs/authenticated-captures.md](./docs/authenticated-captures.md) for the interact-then-capture recipe.
 
 `cookies`, `headers`, and `local_storage` are optional session material applied before navigation, so you can capture pages behind a login. `headers` is a `{name: value}` map sent with every request (e.g. `{"Authorization": "Bearer ..."}`); `cookies` is an array of `{name, value, url?|domain?, path?, secure?, http_only?, same_site?}` (give `url` and Chrome infers the rest); `local_storage` is a `{key: value}` map seeded into the target origin before its own scripts run. On the CLI these are `--header "K: V"`, `--cookie name=value`, and `--local-storage k=v` (each repeatable). See [docs/authenticated-captures.md](./docs/authenticated-captures.md) for full recipes, including driving a JS form login.
 

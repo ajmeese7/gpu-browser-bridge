@@ -60,6 +60,44 @@ gpu-browser screenshot "<app-url>/dashboard" --ignore-https --settle 9000 --out 
 
 Use a dedicated test account and pass credentials at call time - never commit them.
 
+## Capturing a view that only exists after an interaction
+
+Some views live only in client memory - an expanded graph node, an applied filter, a selection - so a fresh navigation always shows the pre-interaction state. `/screenshot` takes an optional `script` that runs against the live page after navigation (with the tab foregrounded, so `requestAnimationFrame` is active) and before `wait_for`/`settle_ms`/capture. The script performs the interaction in-page, then the same tab is screenshotted.
+
+Combine it with stateless session injection so the capture is reproducible and needs no prior login. Inline the script with `--script`, or read it from a file with `--script-file` to avoid shell-quoting a multi-line script:
+
+```bash
+gpu-browser screenshot "<app-url>/projects/<id>/graph" \
+  --ignore-https \
+  --cookie "session=<value>" \
+  --script "window.dispatchEvent(new CustomEvent('graph:expand-subnet', { detail: { cidr: '<cidr>', siteId: '<id>' } }))" \
+  --settle 5000 \
+  --out after.png
+```
+
+```bash
+# multi-line script from a file
+gpu-browser screenshot "<app-url>/projects/<id>/graph" \
+  --ignore-https --cookie "session=<value>" \
+  --script-file expand.js --settle 5000 --out after.png
+```
+
+The script may be `async`; its Promise is awaited, so it can `await` the app's readiness (or the interaction's own settle) before returning. Its return value is discarded - the screenshot is the result. To confirm the feature is working, diff `after.png` against a no-`--script` baseline of the same URL: they should differ.
+
+HTTP body:
+
+```json
+{
+  "url": "<app-url>/projects/<id>/graph",
+  "ignore_https_errors": true,
+  "cookies": [ { "name": "session", "value": "<value>", "url": "<app-url>" } ],
+  "script": "window.dispatchEvent(new CustomEvent('graph:expand-subnet', { detail: { cidr: '<cidr>', siteId: '<id>' } }))",
+  "settle_ms": 5000
+}
+```
+
+`/eval` also foregrounds its tab, so a `script` there can drive `requestAnimationFrame` work and read back the result - use `/eval` when you want the JSON value, `/screenshot --script` when you want the image.
+
 ## Notes
 
 - The bridge brings each per-request tab to the foreground before capturing, so apps that paint via `requestAnimationFrame` (React, Babylon, ...) render rather than hanging.
