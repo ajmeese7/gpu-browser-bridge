@@ -317,7 +317,8 @@ type ScreenshotRequest struct {
 	// before WaitFor/Settle/capture. It may be async; its Promise is awaited.
 	// This is how an interaction-driven view ("expand a node, then look") is
 	// captured: the script performs the interaction in-page, then the same
-	// live tab is screenshotted. The script's return value is discarded.
+	// live tab is screenshotted. Its return value is surfaced as
+	// ScreenshotResult.ScriptResult, so one call can return both image and data.
 	Script string `json:"script,omitempty"`
 	// Click, if set, is a real pointer pick dispatched after Script and before
 	// WaitFor/Settle/capture.
@@ -333,7 +334,11 @@ type ScreenshotRequest struct {
 }
 
 type ScreenshotResult struct {
-	PNG            []byte          `json:"png_b64"` // marshaled as base64 by encoding/json
+	PNG []byte `json:"png_b64"` // marshaled as base64 by encoding/json
+	// ScriptResult is the value the optional Script returned, so one call can
+	// yield both the image and assertion data (e.g. a post-interaction node
+	// count). Omitted when no Script ran.
+	ScriptResult   json.RawMessage `json:"script_result,omitempty"`
 	Console        []ConsoleEntry  `json:"console"`
 	FailedRequests []FailedRequest `json:"failed_requests"`
 }
@@ -359,6 +364,7 @@ func (b *Browser) Screenshot(ctx context.Context, req ScreenshotRequest) (*Scree
 	console, failed := attachListeners(runCtx)
 
 	var png []byte
+	var scriptResult json.RawMessage
 	actions := []chromedp.Action{}
 	if req.ViewportW > 0 && req.ViewportH > 0 {
 		actions = append(actions, chromedp.EmulateViewport(int64(req.ViewportW), int64(req.ViewportH)))
@@ -379,11 +385,10 @@ func (b *Browser) Screenshot(ctx context.Context, req ScreenshotRequest) (*Scree
 	}))
 	// Optional in-page interaction, run on the foregrounded tab so its rAF is
 	// live, before WaitFor/Settle so those observe the post-interaction state.
-	// The return value is discarded; console/network listeners still capture
-	// anything the script logs or fetches.
+	// Its return value is surfaced in ScriptResult; console/network listeners
+	// still capture anything the script logs or fetches.
 	if req.Script != "" {
-		var discard json.RawMessage
-		actions = append(actions, chromedp.Evaluate(req.Script, &discard, evalAwait))
+		actions = append(actions, chromedp.Evaluate(req.Script, &scriptResult, evalAwait))
 	}
 	// Optional real pointer pick, after the script set up state and before
 	// WaitFor/Settle so those observe the post-click result.
@@ -408,6 +413,7 @@ func (b *Browser) Screenshot(ctx context.Context, req ScreenshotRequest) (*Scree
 
 	return &ScreenshotResult{
 		PNG:            png,
+		ScriptResult:   scriptResult,
 		Console:        console.snapshot(),
 		FailedRequests: failed.snapshot(),
 	}, nil

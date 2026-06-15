@@ -315,11 +315,13 @@ func TestE2E(t *testing.T) {
 			t.Skipf("no hardware GPU (adapter %q); Page.captureScreenshot needs a GPU compositor", v)
 		}
 		// /interact is white until the 'flip' event fires. The pre-script
-		// dispatches it, so a blue center pixel proves the script ran on the
-		// live page before capture (a no-script capture would be white).
+		// dispatches it and returns a value, so a blue center pixel proves the
+		// script ran before capture (a no-script capture would be white) and
+		// script_result proves its return value is surfaced alongside the image.
 		res := post(t, bridge, "/screenshot", map[string]any{
 			"url": app.URL + "/interact", "viewport_w": 160, "viewport_h": 160,
-			"script": "window.dispatchEvent(new Event('flip'))", "settle_ms": 500, "timeout_ms": 30000,
+			"script":    "window.dispatchEvent(new Event('flip')); 'flipped'",
+			"settle_ms": 500, "timeout_ms": 30000,
 		})
 		var b64 string
 		json.Unmarshal(res["png_b64"], &b64)
@@ -333,6 +335,9 @@ func TestE2E(t *testing.T) {
 		r8, g8, b8 := r>>8, g>>8, bl>>8
 		if b8 < 200 || r8 > 60 || g8 < 90 || g8 > 170 {
 			t.Fatalf("post-script pixel rgb(%d,%d,%d) not ~rgb(0,128,255) - pre-script did not run?", r8, g8, b8)
+		}
+		if got := strings.TrimSpace(string(res["script_result"])); got != `"flipped"` {
+			t.Fatalf("script_result = %s, want \"flipped\"", got)
 		}
 	})
 
