@@ -317,6 +317,7 @@ func runScreenshot(args []string) {
 
 	var result struct {
 		PNG            string          `json:"png_b64"`
+		ScriptResult   json.RawMessage `json:"script_result"`
 		Console        json.RawMessage `json:"console"`
 		FailedRequests json.RawMessage `json:"failed_requests"`
 	}
@@ -334,6 +335,11 @@ func runScreenshot(args []string) {
 			fatal("write %s: %v", *out, err)
 		}
 		fmt.Fprintf(os.Stderr, "wrote %d bytes to %s\n", len(png), *out)
+	}
+	// PNG is the stdout payload; the script's return value and diagnostics go to
+	// stderr so stdout stays a clean image stream.
+	if len(result.ScriptResult) > 0 && string(result.ScriptResult) != "null" {
+		fmt.Fprintf(os.Stderr, "script_result: %s\n", result.ScriptResult)
 	}
 	fmt.Fprintf(os.Stderr, "console: %s\nfailed: %s\n", result.Console, result.FailedRequests)
 }

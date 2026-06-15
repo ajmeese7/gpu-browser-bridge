@@ -1,10 +1,35 @@
 package browser
 
 import (
+	"encoding/json"
+	"strings"
 	"testing"
 
 	"github.com/chromedp/cdproto/network"
 )
+
+func TestScreenshotResultScriptResult(t *testing.T) {
+	// script_result is omitted when no script ran, and passed through verbatim
+	// when one did (so callers get the image and assertion data in one call).
+	empty, err := json.Marshal(ScreenshotResult{PNG: []byte{1, 2, 3}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(empty), "script_result") {
+		t.Errorf("empty script_result should be omitted: %s", empty)
+	}
+
+	withResult, err := json.Marshal(ScreenshotResult{
+		PNG:          []byte{1, 2, 3},
+		ScriptResult: json.RawMessage(`{"nodes":42}`),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(withResult), `"script_result":{"nodes":42}`) {
+		t.Errorf("script_result not passed through: %s", withResult)
+	}
+}
 
 func TestToCookieParams(t *testing.T) {
 	if toCookieParams(nil) != nil {
