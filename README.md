@@ -2,8 +2,6 @@
 
 Drive a real GPU-backed Chrome on a remote Windows workstation from a headless host, so WebGPU / WebGL / WebXR code paths can be verified without falling back to software rendering.
 
-**Status:** v1 working end-to-end. Tested on Chrome 148, AMD RDNA-2.
-
 ## Why
 
 Headless Chromium has no WebGPU adapter, so any code that branches on `navigator.gpu` either silently falls back to WebGL2 or fails in ways that are invisible to the headless caller. This means:
