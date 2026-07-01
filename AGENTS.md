@@ -56,6 +56,8 @@ Cross-platform CLI that talks to bridge.exe over HTTP.
 
 - `gpu-browser healthz` - check bridge status
 - `gpu-browser screenshot <url> [flags]` - capture PNG
+- `gpu-browser burst <url> [flags]` - capture N frames + per-frame pixel-diff report (flicker/oscillation), agent-facing
+- `gpu-browser probe <url> --watch <spec> [flags]` - sample DOM/state values over time (distinct values + transitions); client-side sugar over `/eval`
 - `gpu-browser eval <url> <script> [flags]` - run JS, return result
 
 Config from env (`BRIDGE_URL`, `BRIDGE_TOKEN`) or `~/.config/gpu-browser/config`.
@@ -79,18 +81,20 @@ Key design decisions:
 - Builds exec options from scratch instead of `chromedp.DefaultExecAllocatorOptions`, which includes `DisableGPU` (fatal for WebGPU) and OLD headless. Uses NEW headless (`--headless=new`) explicitly: no window at all, but keeps the real GPU - verified `navigator.gpu.requestAdapter()` returns the AMD RDNA-2 adapter and a WebGPU sample renders to a non-black screenshot.
 - Keeps an "anchor tab" (the browserCtx from `chromedp.NewContext`) alive for the lifetime of the service. Closing the anchor tab would close Chrome.
 - The launch timeout uses a goroutine + `time.After` instead of `context.WithTimeout(browserCtx, ...)` because chromedp ties tab lifetime to whichever context the first `Run` uses. Wrapping it in a derived context and cancelling that context kills the anchor tab.
-- Per-request operations (`Screenshot`, `Eval`) create a fresh tab via `chromedp.NewContext(browserCtx)`, do their work, then cancel the tab context.
+- Per-request operations (`Screenshot`, `Eval`, `Burst`) create a fresh tab via `chromedp.NewContext(browserCtx)`, do their work, then cancel the tab context.
+- `Burst` (`burst.go`) captures N frames in one live tab by looping `Page.captureScreenshot` (the same primitive that already captures real WebGPU pixels, so no `startScreencast` plumbing), then computes per-adjacent-frame changed-pixel percentage over an optional crop and derives a flicker/oscillation summary. Oscillation is found by timing the mean-crossing "change events" and checking the gaps are regular (robust against the harmonic-locking autocorrelation does on a sparse spike train). The request timeout is derived from `frames * interval + settle`, and the reported period uses the measured median frame interval (which includes the ~100ms cost of a real-GPU capture), not the nominal `interval`.
 - If Chrome dies between requests, `newTab()` detects `browserCtx.Err() != nil` and relaunches.
 
 Console and network listeners (`listeners.go`) capture `runtime.EventConsoleAPICalled`, `runtime.EventExceptionThrown`, `network.EventResponseReceived` (>= 400), and `network.EventLoadingFailed`.
 
-`SessionContext` (embedded in both `ScreenshotRequest` and `EvalRequest`, so its fields are top-level JSON) applies optional `cookies`/`headers`/`local_storage` for capturing authenticated pages. Its `preNavigateActions()` run after `network.Enable()` and before `Navigate`: headers via `Network.setExtraHTTPHeaders`, cookies via `Network.setCookies`, and localStorage seeded with `Page.addScriptToEvaluateOnNewDocument` (so it is set in the target origin before page scripts run).
+`SessionContext` (embedded in `ScreenshotRequest`, `EvalRequest`, and `BurstRequest`, so its fields are top-level JSON) applies optional `cookies`/`headers`/`local_storage` for capturing authenticated pages. Its `preNavigateActions()` run after `network.Enable()` and before `Navigate`: headers via `Network.setExtraHTTPHeaders`, cookies via `Network.setCookies`, and localStorage seeded with `Page.addScriptToEvaluateOnNewDocument` (so it is set in the target origin before page scripts run).
 
 ### internal/server
 
 Standard `net/http` server with:
 - `GET /healthz` - unauthenticated, returns `{ok, chrome_alive, uptime_s}`
 - `POST /screenshot` - authenticated, drives Chrome to a URL and captures PNG
+- `POST /burst` - authenticated, captures N frames and returns the pixel-diff analysis (frames only when `return_frames` is set)
 - `POST /eval` - authenticated, runs JS in page context, returns result
 - Bearer-token auth middleware with `crypto/subtle.ConstantTimeCompare`
 - Request logging via `slog`

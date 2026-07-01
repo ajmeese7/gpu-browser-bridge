@@ -2,8 +2,6 @@
 
 Drive a real GPU-backed Chrome on a remote Windows workstation from a headless host, so WebGPU / WebGL / WebXR code paths can be verified without falling back to software rendering.
 
-**Status:** v1 working end-to-end. Tested on Chrome 148, AMD RDNA-2.
-
 ## Why
 
 Headless Chromium has no WebGPU adapter, so any code that branches on `navigator.gpu` either silently falls back to WebGL2 or fails in ways that are invisible to the headless caller. This means:
@@ -58,6 +56,11 @@ gpu-browser healthz
 gpu-browser screenshot https://example.com/ --out example.png
 gpu-browser eval https://example.com/ \
   "(async () => { const a = await navigator.gpu?.requestAdapter(); return a?.info; })()"
+
+# Temporal capture (see "Temporal capture" below)
+gpu-browser burst https://your-app/ --frames 40 --interval 50 --out-dir frames/
+gpu-browser probe https://your-app/ --duration 3000 --step 40 \
+  --watch "canvas@data-rendered-node-count"
 ```
 
 ## API
@@ -68,6 +71,7 @@ All POST endpoints require `Authorization: Bearer <token>`. `GET /healthz` is un
 |--------|------|------|---------|
 | `GET`  | `/healthz` | — | `{ok, chrome_alive, uptime_s}` |
 | `POST` | `/screenshot` | `{url, script?, click?, viewport_w?, viewport_h?, wait_for?, full_page?, ignore_https_errors?, settle_ms?, timeout_ms?, cookies?, headers?, local_storage?}` | `{png_b64, script_result?, console[], failed_requests[]}` |
+| `POST` | `/burst` | `{url, frames, interval_ms, region?, return_frames?, flicker_threshold_pct?, script?, click?, viewport_w?, viewport_h?, wait_for?, ignore_https_errors?, settle_ms?, timeout_ms?, cookies?, headers?, local_storage?}` | `{frames, interval_ms, frame_interval_ms, region?, diffs[], max_changed_pct, mean_changed_pct, flicker, oscillation, frame_pngs?, script_result?, console[], failed_requests[]}` |
 | `POST` | `/eval` | `{url, script, click?, wait_for?, ignore_https_errors?, settle_ms?, timeout_ms?, cookies?, headers?, local_storage?}` | `{result, console[], failed_requests[]}` |
 
 `script` on `/eval` runs in page context after navigation + optional wait; the final expression's value is returned. Promises are awaited.
@@ -77,6 +81,13 @@ All POST endpoints require `Authorization: Bearer <token>`. `GET /healthz` is un
 `click` is `{x, y}` in viewport CSS pixels: a real pointer pick (`mousePressed` + `mouseReleased`, via CDP `Input.dispatchMouseEvent`) dispatched on the foregrounded tab. Unlike a synthetic click built in JS, it drives the page's actual pointer path — hit-testing, capture, drag thresholds — which is what canvas pickers (Babylon, WebGPU) react to. On `/screenshot` it fires after `script` and before capture; on `/eval` it fires before the script, so the script can read the post-click state. On the CLI it is `--click X,Y`.
 
 `cookies`, `headers`, and `local_storage` are optional session material applied before navigation, so you can capture pages behind a login. `headers` is a `{name: value}` map sent with every request (e.g. `{"Authorization": "Bearer ..."}`); `cookies` is an array of `{name, value, url?|domain?, path?, secure?, http_only?, same_site?}` (give `url` and Chrome infers the rest); `local_storage` is a `{key: value}` map seeded into the target origin before its own scripts run. On the CLI these are `--header "K: V"`, `--cookie name=value`, and `--local-storage k=v` (each repeatable). See [docs/authenticated-captures.md](./docs/authenticated-captures.md) for full recipes, including driving a JS form login.
+
+### Temporal capture (`burst` / `probe`)
+
+A single screenshot is blind to time-varying bugs (flicker, redraw loops, animation jank, oscillating state). Two commands quantify motion so an agent can detect a regression with no human watching:
+
+- `gpu-browser burst URL --frames 40 --interval 50 [--region x,y,w,h] [--out-dir DIR]` captures N composited frames in one live session and returns a per-adjacent-frame pixel-diff report. Because the frames come from the compositor (`Page.captureScreenshot`), this sees **in-canvas WebGPU/WebGL pixels**, which `toDataURL`/`getImageData` cannot read back. The JSON reports `diffs[]` (changed-pixel % per frame pair), `max_changed_pct`/`mean_changed_pct`, `flicker` (max over a threshold on a scene that should be static), and `oscillation` (`{detected, approx_period_ms}` for a periodic redraw loop). Use `--region` to diff just the 3D canvas so unrelated repaints do not swamp the signal. Frames are written to `--out-dir` (as `NNNN.png`) and returned over the wire only when you pass `--out-dir`; otherwise you get analysis-only JSON. `approx_period_ms` is derived from the measured frame interval (a real-GPU capture costs ~100ms), reported as `frame_interval_ms`, not the nominal `--interval`.
+- `gpu-browser probe URL --duration 3000 --step 40 --watch "canvas@data-rendered-node-count" [--watch ...]` samples DOM/state values over time and returns each watch's distinct values plus a timed transition list. `--watch` forms: `sel@attr`, `text:/regex/`, `count:cssSelector`, or a bare CSS selector (element `textContent`). This is the cheap first pass for DOM-level oscillation; reach for `burst` when the bug is in-canvas pixels. It has no dedicated endpoint (it is client-side sugar over `/eval`).
 
 ## Install
 
