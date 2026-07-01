@@ -74,6 +74,8 @@ All require `Authorization: Bearer <token>` header. Token loaded from `%PROGRAMD
 
 > **Deferred:** `/trace` (multi-step Playwright traces) was originally planned for v1 but deferred to reduce scope. Screenshots + eval cover the primary use cases.
 
+> **Follow-on (landed post-v1):** the endpoints above have since grown session injection (`cookies`/`headers`/`local_storage`), a pre-capture `script`, a real-pointer `click`, and temporal capture (`POST /burst` for frame-diff flicker/oscillation analysis, plus a `probe` CLI for DOM/state time-series over `/eval`). This table is the original v1 plan; see [README.md](./README.md) for the live API reference.
+
 #### Chrome lifecycle
 
 - On service start: launch Chrome with persistent `--user-data-dir` (preserves login state between requests).
