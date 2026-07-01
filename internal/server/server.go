@@ -34,6 +34,7 @@ func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", s.handleHealthz)
 	mux.HandleFunc("POST /screenshot", s.requireAuth(s.handleScreenshot))
+	mux.HandleFunc("POST /burst", s.requireAuth(s.handleBurst))
 	mux.HandleFunc("POST /eval", s.requireAuth(s.handleEval))
 	return s.logRequests(mux)
 }
@@ -57,6 +58,20 @@ func (s *Server) handleScreenshot(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	res, err := s.browser.Screenshot(r.Context(), req)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, res)
+}
+
+func (s *Server) handleBurst(w http.ResponseWriter, r *http.Request) {
+	var req browser.BurstRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, fmt.Errorf("decode body: %w", err))
+		return
+	}
+	res, err := s.browser.Burst(r.Context(), req)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err)
 		return

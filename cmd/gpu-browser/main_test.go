@@ -1,9 +1,11 @@
 package main
 
 import (
+	"encoding/json"
 	"flag"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -56,6 +58,43 @@ func TestParseClick(t *testing.T) {
 				t.Errorf("parseClick(%q) = (%v,%v), want (%v,%v)", tc.in, x, y, tc.x, tc.y)
 			}
 		})
+	}
+}
+
+func TestParseRegion(t *testing.T) {
+	x, y, w, h, err := parseRegion("0,84,778,418")
+	if err != nil {
+		t.Fatalf("parseRegion: %v", err)
+	}
+	if x != 0 || y != 84 || w != 778 || h != 418 {
+		t.Errorf("parseRegion = (%d,%d,%d,%d), want (0,84,778,418)", x, y, w, h)
+	}
+	if _, _, _, _, err := parseRegion(" 1 , 2 , 3 , 4 "); err != nil {
+		t.Errorf("parseRegion with spaces: %v", err)
+	}
+	for _, bad := range []string{"1,2,3", "1,2,3,4,5", "a,2,3,4", ""} {
+		if _, _, _, _, err := parseRegion(bad); err == nil {
+			t.Errorf("parseRegion(%q) = nil error, want error", bad)
+		}
+	}
+}
+
+// buildProbeScript must embed the watch specs verbatim and be awaitable JSON so
+// the /eval promise resolves to the analysis object.
+func TestBuildProbeScript(t *testing.T) {
+	watches := []string{"canvas@data-rendered-node-count", "text:/nodes selected/"}
+	script := buildProbeScript(watches, 3000, 40)
+
+	specs, _ := json.Marshal(watches)
+	if !strings.Contains(script, string(specs)) {
+		t.Errorf("script missing embedded specs %s:\n%s", specs, script)
+	}
+	if !strings.Contains(script, "durationMs = 3000, stepMs = 40") {
+		t.Errorf("script missing duration/step:\n%s", script)
+	}
+	// Awaited IIFE so chromedp's WithAwaitPromise resolves the analysis object.
+	if !strings.HasPrefix(script, "(async () => {") || !strings.HasSuffix(script, "})()") {
+		t.Errorf("script is not an awaited async IIFE:\n%s", script)
 	}
 }
 

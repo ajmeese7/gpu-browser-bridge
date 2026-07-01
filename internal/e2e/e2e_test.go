@@ -143,6 +143,18 @@ func appServer(t *testing.T) *httptest.Server {
 			`<script>requestAnimationFrame(()=>requestAnimationFrame(()=>{`+
 			`document.getElementById('x').style.background='rgb(0,128,255)';}));</script></body></html>`)
 	})
+	mux.HandleFunc("/flicker", func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/html")
+		// Toggles the full-viewport background every 600ms. The hold is several
+		// frames long (captureScreenshot cadence is ~100-150ms on a real GPU), so
+		// the diff series is a periodic spike train: a clean flicker + oscillation
+		// signal rather than a change-every-frame animation.
+		fmt.Fprint(w, `<!doctype html><html><body style="margin:0">`+
+			`<div id="x" style="width:100vw;height:100vh;background:#000"></div>`+
+			`<script>let on=false;setInterval(()=>{on=!on;`+
+			`document.getElementById('x').style.background=on?'#fff':'#000';},600);</script>`+
+			`</body></html>`)
+	})
 	mux.HandleFunc("/click", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "text/html")
 		// Records the coordinates of a real click on a full-viewport pad. A
@@ -338,6 +350,49 @@ func TestE2E(t *testing.T) {
 		}
 		if got := strings.TrimSpace(string(res["script_result"])); got != `"flipped"` {
 			t.Fatalf("script_result = %s, want \"flipped\"", got)
+		}
+	})
+
+	t.Run("burst_detects_flicker", func(t *testing.T) {
+		if v := gpuVendor(t, bridge, app.URL+"/"); softwareGPU(v) {
+			t.Skipf("no hardware GPU (adapter %q); Page.captureScreenshot needs a GPU compositor", v)
+		}
+		// /flicker toggles every 600ms; 40 frames spans several cycles, so flicker
+		// trips and the spike-train diff series autocorrelates to a period near
+		// the 600ms toggle.
+		res := post(t, bridge, "/burst", map[string]any{
+			"url": app.URL + "/flicker", "viewport_w": 160, "viewport_h": 160,
+			"frames": 40, "interval_ms": 50, "settle_ms": 300,
+		})
+		var flicker bool
+		json.Unmarshal(res["flicker"], &flicker)
+		if !flicker {
+			t.Fatalf("toggling page not flagged as flicker (diffs: %s)", res["diffs"])
+		}
+		var osc struct {
+			Detected       bool `json:"detected"`
+			ApproxPeriodMS int  `json:"approx_period_ms"`
+		}
+		json.Unmarshal(res["oscillation"], &osc)
+		// Broad band: capture cadence and setInterval both jitter under load.
+		if !osc.Detected || osc.ApproxPeriodMS < 300 || osc.ApproxPeriodMS > 1000 {
+			t.Errorf("expected oscillation ~600ms, got %+v (diffs: %s)", osc, res["diffs"])
+		}
+	})
+
+	t.Run("burst_static_no_flicker", func(t *testing.T) {
+		if v := gpuVendor(t, bridge, app.URL+"/"); softwareGPU(v) {
+			t.Skipf("no hardware GPU (adapter %q); Page.captureScreenshot needs a GPU compositor", v)
+		}
+		// /color paints once and holds; adjacent frames are identical.
+		res := post(t, bridge, "/burst", map[string]any{
+			"url": app.URL + "/color", "viewport_w": 160, "viewport_h": 160,
+			"frames": 10, "interval_ms": 50, "settle_ms": 300,
+		})
+		var flicker bool
+		json.Unmarshal(res["flicker"], &flicker)
+		if flicker {
+			t.Fatalf("static page flagged as flicker (diffs: %s)", res["diffs"])
 		}
 	})
 
