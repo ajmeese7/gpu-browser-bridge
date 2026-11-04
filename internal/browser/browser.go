@@ -8,6 +8,7 @@
 package browser
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -24,6 +25,23 @@ import (
 	"github.com/chromedp/cdproto/security"
 	"github.com/chromedp/chromedp"
 )
+
+type chromeOutputBuffer struct {
+	mu   sync.Mutex
+	data bytes.Buffer
+}
+
+func (b *chromeOutputBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.data.Write(p)
+}
+
+func (b *chromeOutputBuffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.data.String()
+}
 
 // Browser supervises a Chrome process and serves per-request operations.
 type Browser struct {
@@ -43,7 +61,7 @@ func New(cfg *config.Config, log *slog.Logger) *Browser {
 
 // Start launches Chrome and waits until it accepts CDP commands.
 // Returns nil once the browser is ready to serve requests. Blocks up to
-// 30s; the caller-provided context bounds nothing during launch on
+// 60s; the caller-provided context bounds nothing during launch on
 // purpose (Start is called once at boot and the launch is atomic).
 func (b *Browser) Start(_ context.Context) error {
 	b.mu.Lock()
@@ -60,7 +78,10 @@ func (b *Browser) launchLocked() error {
 	// NOTE: we do NOT extend chromedp.DefaultExecAllocatorOptions because it
 	// includes DisableGPU (fatal for WebGPU) and OLD headless. We set NEW
 	// headless (--headless=new) explicitly below, which keeps the real GPU.
+	chromeOutput := &chromeOutputBuffer{}
 	opts := []chromedp.ExecAllocatorOption{
+		chromedp.CombinedOutput(chromeOutput),
+		chromedp.WSURLReadTimeout(45 * time.Second),
 		chromedp.ExecPath(b.cfg.ChromePath),
 		chromedp.UserDataDir(b.cfg.UserDataDir),
 		chromedp.NoFirstRun,
@@ -111,12 +132,12 @@ func (b *Browser) launchLocked() error {
 		if err != nil {
 			browserCancel()
 			allocCancel()
-			return fmt.Errorf("start chrome: %w", err)
+			return fmt.Errorf("start chrome: %w; output: %s", err, strings.TrimSpace(chromeOutput.String()))
 		}
-	case <-time.After(30 * time.Second):
+	case <-time.After(60 * time.Second):
 		browserCancel()
 		allocCancel()
-		return fmt.Errorf("start chrome: timed out after 30s")
+		return fmt.Errorf("start chrome: timed out after 60s; output: %s", strings.TrimSpace(chromeOutput.String()))
 	}
 
 	b.allocCtx = allocCtx
