@@ -118,7 +118,7 @@ $principal = New-ScheduledTaskPrincipal -UserId $user -LogonType Interactive -Ru
 $settings  = New-ScheduledTaskSettingsSet `
   -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable `
   -RestartCount 3 -RestartInterval (New-TimeSpan -Minutes 1) `
-  -ExecutionTimeLimit ([TimeSpan]::Zero) -MultipleInstances IgnoreNew
+  -ExecutionTimeLimit ([TimeSpan]::Zero) -MultipleInstances IgnoreNew -Priority 4
 Register-ScheduledTask -TaskName $TaskName -Action $action -Trigger $trigger `
   -Principal $principal -Settings $settings -Force | Out-Null
 
@@ -126,10 +126,11 @@ Register-ScheduledTask -TaskName $TaskName -Action $action -Trigger $trigger `
 Write-Host "Starting task ..."
 Start-ScheduledTask -TaskName $TaskName
 $ok = $false
-for ($i = 0; $i -lt 40; $i++) {
+$startupDeadline = [DateTime]::UtcNow.AddSeconds(65)
+while ([DateTime]::UtcNow -lt $startupDeadline) {
   Start-Sleep -Milliseconds 750
   try {
-    $h = (Invoke-WebRequest "http://127.0.0.1:51234/healthz" -UseBasicParsing -TimeoutSec 3).Content
+    $h = (Invoke-WebRequest "http://127.0.0.1:51234/healthz" -UseBasicParsing -TimeoutSec 1).Content
     if ($h -match '"ok":true') { $ok = $true; break }
   } catch { }
 }
@@ -151,7 +152,7 @@ if ($ok) {
   Write-Host "NOTE: the logon task only runs once you are logged on. For unattended"
   Write-Host "reboots, enable auto-logon (see windows/README.md)."
 } else {
-  Write-Host "WARNING: bridge did not report healthy on 127.0.0.1:51234 within ~30s." -ForegroundColor Yellow
+  Write-Host "WARNING: bridge did not report healthy on 127.0.0.1:51234 within ~65s." -ForegroundColor Yellow
   Write-Host "Last lines of ${logPath}:" -ForegroundColor Yellow
   if (Test-Path $logPath) { Get-Content $logPath -Tail 15 }
 }

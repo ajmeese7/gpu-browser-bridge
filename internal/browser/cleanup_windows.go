@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"os/exec"
 	"strings"
+	"syscall"
 	"time"
 )
 
@@ -33,7 +34,7 @@ func killStaleChrome(userDataDir string, log *slog.Logger) {
 			`($p | Measure-Object).Count`,
 		pattern,
 	)
-	cmd := exec.Command("powershell", "-NoProfile", "-NonInteractive", "-Command", script)
+	cmd := hiddenPowerShell(script)
 	out, err := cmd.Output()
 	if err != nil {
 		log.Warn("stale-chrome cleanup failed", "err", err)
@@ -44,4 +45,10 @@ func killStaleChrome(userDataDir string, log *slog.Logger) {
 		// Give Windows a moment to release the profile singleton before relaunch.
 		time.Sleep(500 * time.Millisecond)
 	}
+}
+
+func hiddenPowerShell(script string) *exec.Cmd {
+	cmd := exec.Command("powershell", "-NoProfile", "-NonInteractive", "-Command", script)
+	cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true, CreationFlags: 0x08000000}
+	return cmd
 }
